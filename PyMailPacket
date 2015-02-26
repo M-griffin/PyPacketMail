@@ -1,0 +1,95 @@
+#!/usr/bin/env python2.7
+# vim: set fileencoding=<utf-8> :
+""" PyMailPacket for x/84, http://github.com/jquast/x84
+    (c) 2015 Michael Griffin <mrmisticismo@hotmail.com>
+    http://github.com/m-griffin/PyMailPacket
+
+    This is a FidoNet Echomail Scanner / Tosser for x84 bbs.
+    This will mimic the basic functionality of Crashmail for
+    Reading and Writing mail packets.
+"""
+
+__author__     = "Michael Griffin"
+__copyright__  = "Copyright 2015"
+__credits__    = ["Jeff Quast"]
+__license__    = "MIT"
+__version__    = "1.0.0"
+__status__     = "Prototype"
+
+import ConfigParser
+import collections
+import zipfile
+import struct
+import glob
+import os
+
+
+_struct_fidonet_packetfields = [
+    ('H', 'origin_node'),
+    ('H', 'destination_node'),
+    ('H', 'year'),
+    ('H', 'month'),
+    ('H', 'day'),
+    ('H', 'hour'),
+    ('H', 'minute'),
+    ('H', 'second'),
+    ('H', 'baud'),
+    ('H', 'packet_type'),
+    ('H', 'origin_network'),
+    ('H', 'destination_network'),
+    ('B', 'prod_code_low'),
+    ('B', 'revision_major'),
+    ('8s', 'password'),
+    ('H', 'origin_zone'),
+    ('H', 'destination_zone'),
+    ('H', 'aux_network'),
+    ('H', 'capWordA'),
+    ('B', 'prod_code_hi'),
+    ('B', 'pRevMinor'),
+    ('H', 'capWordB'),
+    ('H', 'origin_zone2'),
+    ('H', 'destination_zone2'),
+    ('H', 'origin_point'),
+    ('H', 'destination_point'),
+    ('L', 'prod_data')
+]
+_struct_fidonet_packet = '<{0}'.format(
+    ''.join(struct_val for struct_val, _ in _struct_fidonet_packetfields))
+FidonetPacket = collections.namedtuple(
+    'FidonetPacket', [field_name for _, field_name in _struct_fidonet_packetfields])
+
+
+def main():
+    # Get Path to Fido Packets from Config file.
+    config = ConfigParser.ConfigParser()
+    config.read(u'mailpacket.conf')
+    inbound_folder = config.get(u'mailpacket', u'inbound')
+    unpack_folder = config.get(u'mailpacket', u'unpack')
+
+    assert os.path.isdir(inbound_folder)
+
+    for filepath_zip in glob.glob(os.path.join(inbound_folder, '*.*')):
+        #unpack_folder = tempfile.mkdtemp(suffix='unpack-fdn')
+        try:
+            with zipfile.ZipFile(filepath_zip) as zip_obj:
+                zip_obj.extractall(unpack_folder)
+
+            packet_path = os.path.join(unpack_folder, '*.pkt')
+            print packet_path
+            assert os.path.isdir(unpack_folder)
+
+            for file_name in os.listdir(unpack_folder):
+                # Parse Each Packet for the Header first.
+                print u'Mail Packet: ' + file_name
+
+                fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
+                fido_packet = FidonetPacket(*struct.unpack(_struct_fidonet_packet, fido_object.read()[:58]))
+                print fido_packet
+
+        finally:
+            # Clear the unpack_folder here lateron, leave for testing, just overwrites!
+            print u'Done'
+
+
+if __name__ == '__main__':
+    main()
