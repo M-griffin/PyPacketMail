@@ -16,13 +16,11 @@ __license__ = "MIT"
 __version__ = "1.0.0"
 __status__ = "Prototype"
 
-import binascii
 import ConfigParser
 import collections
 import zipfile
 import struct
 import glob
-import sys
 import os
 
 
@@ -117,7 +115,6 @@ def read_kluge_string(file_object, offset):
 
 def read_message_text(file_object, offset):
     # Function to read message text up to null terminator
-    new_string = ""
     assert isinstance(offset, object)
     file_object.seek(offset)
 
@@ -125,8 +122,8 @@ def read_message_text(file_object, offset):
     for chunk in iter(lambda: file_object.read(1), ''):
         if chunk in '\x00':
             break
+            
         # elif chunk in ('\x01', '\x9d', '0x9d'):
-
         my_list.append(chunk)
 
     return my_list
@@ -141,10 +138,10 @@ def main():
 
     assert os.path.isdir(inbound_folder)
 
-    for filepath_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
+    for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
         # Uncompress packet bundles, then loop to read packet/message headers/messages
         try:
-            with zipfile.ZipFile(filepath_zip) as zip_obj:
+            with zipfile.ZipFile(file_path_zip) as zip_obj:
                 zip_obj.extractall(unpack_folder)
 
             packet_path = os.path.join(unpack_folder, u'*.pkt')
@@ -171,7 +168,7 @@ def main():
                     break
 
                 # Make sure we have correct size! Otherwise were done.
-                print 'packet_header_read len: ' + str(len(packet_header_read))
+                # print 'packet_header_read len: ' + str(len(packet_header_read))
                 if len(packet_header_read) < 58:
                         break
 
@@ -202,7 +199,7 @@ def main():
                         break
 
                     # Make sure we have correct size! Otherwise were done.
-                    print 'message_header_read len: ' + str(len(message_header_read))
+                    # print 'message_header_read len: ' + str(len(message_header_read))
                     if len(message_header_read) < 14:
                         break
 
@@ -225,21 +222,21 @@ def main():
                     """
 
                     # Use cleaner way to keep track of offset!!
-                    newstr = read_cstring(fido_object, offset)
-                    offset += len(newstr) + 1
-                    print u'DateTime: ' + newstr
+                    new_string = read_cstring(fido_object, offset)
+                    offset += len(new_string) + 1
+                    print u'DateTime: ' + new_string
 
-                    newstr = read_cstring(fido_object, offset)
-                    offset += len(newstr) + 1
-                    print u'To (UserName): ' + newstr
+                    new_string = read_cstring(fido_object, offset)
+                    offset += len(new_string) + 1
+                    print u'To (UserName): ' + new_string
 
-                    newstr = read_cstring(fido_object, offset)
-                    offset += len(newstr) + 1
-                    print u'From (UserName): ' + newstr
+                    new_string = read_cstring(fido_object, offset)
+                    offset += len(new_string) + 1
+                    print u'From (UserName): ' + new_string
 
-                    newstr = read_cstring(fido_object, offset)
-                    offset += len(newstr) + 1
-                    print u'Subject: ' + newstr
+                    new_string = read_cstring(fido_object, offset)
+                    offset += len(new_string) + 1
+                    print u'Subject: ' + new_string
 
                     # We now read the entire message up to null terminator
                     # some fields terminate with 0x9d, and start with
