@@ -79,7 +79,7 @@ FidonetMessageHeader = collections.namedtuple(
 
 def read_cstring(file_object, offset):
     # Function to read text up to null terminator
-    newstr = ""
+    new_string = ""
     # jump to offset.
     assert isinstance(offset, object)
     file_object.seek(offset)
@@ -92,13 +92,13 @@ def read_cstring(file_object, offset):
             # Break on Null Terminated
             break
 
-        newstr += str(byte)
-    return newstr
+        new_string += str(byte)
+    return new_string
 
 
-def read_kstring(file_object, offset):
+def read_kluge_string(file_object, offset):
     # Function to read text up to terminator
-    newstr = ""
+    new_string = ""
     # jump to offset.
     assert isinstance(offset, object)
     file_object.seek(offset)
@@ -111,14 +111,8 @@ def read_kstring(file_object, offset):
             # Terminated with 157 for Kludge Lines
             break
 
-        newstr += str(byte)
-    return newstr
-
-'''
-The problem is we can't just place this text into a string
-because of the binary characters, They seem to populate and
-Display from a list perfectly fine, but not a string!
-'''
+        new_string += str(byte)
+    return new_string
 
 
 def read_message_text(file_object, offset):
@@ -157,6 +151,8 @@ def main():
             print packet_path
             assert os.path.isdir(unpack_folder)
 
+            total_message_count = 0
+
             for file_name in os.listdir(unpack_folder):
                 # Parse Each Packet for the Header first.
                 print u'Mail Packet: ' + file_name
@@ -170,8 +166,8 @@ def main():
                 except EOFError:
                         # move to next packet if were at the end.
                         break
-                    
-                if not packet_header_read:                    
+
+                if not packet_header_read:
                     break
 
                 # Make sure we have correct size! Otherwise were done.
@@ -179,13 +175,14 @@ def main():
                 if len(packet_header_read) < 58:
                         break
 
-                
-
+                # Read the Packet Header
                 fido_header = FidonetPacketHeader(
                     *struct.unpack(_struct_fidonet_packet, packet_header_read))
 
                 assert isinstance(fido_header, object)
                 print fido_header
+
+                message_count = 0
 
                 offset = struct.calcsize(_struct_fidonet_packet)
                 while True:
@@ -201,14 +198,15 @@ def main():
                         # move to next packet if were at the end.
                         break
 
-                    if not packet_header_read:                    
-                    break
-                    
+                    if not packet_header_read:
+                        break
+
                     # Make sure we have correct size! Otherwise were done.
                     print 'message_header_read len: ' + str(len(message_header_read))
                     if len(message_header_read) < 14:
                         break
 
+                    # Read the Message Header
                     fido_message_header = FidonetMessageHeader(
                         *struct.unpack(_struct_fidonet_message_header, message_header_read))
 
@@ -219,7 +217,6 @@ def main():
                     offset += struct.calcsize(_struct_fidonet_message_header)
 
                     # Next move back to the next position
-
                     """ Next we need to parse For '\x00' terminated strings.
                     ('20s', 'dateTime'),
                     ('36s', 'toUsername'),
@@ -231,7 +228,6 @@ def main():
                     newstr = read_cstring(fido_object, offset)
                     offset += len(newstr) + 1
                     print u'DateTime: ' + newstr
-
 
                     newstr = read_cstring(fido_object, offset)
                     offset += len(newstr) + 1
@@ -247,8 +243,8 @@ def main():
 
                     # We now read the entire message up to null terminator
                     # some fields terminate with 0x9d, and start with
-                    # ie AREA:%s\x0d
-                    # Other fields : Kludge Lines
+                    # ie AREA:%s \x0d or \r!
+                    # Other fields start with \x01: Kludge Lines
                     # "\x01""PID:",5
                     # "\x01""MSGID:",7
                     # "\x01""REPLY:",7
@@ -263,21 +259,19 @@ def main():
                     # " * Origin: ",11
                     # TID
 
-                    '''
-                    newstr = fido_object.read(200)
-                    offset += 200
-                    fido_object.seek(offset)
-
-                    sys.stdout.write(newstr)
-                    print ''
-                    '''
-
+                    # Read in entire text of message (parse out after, kludge and tag/origin lines)
                     message_list = read_message_text(fido_object, offset)
                     offset += len(message_list) + 1
                     print message_list
 
+                    message_count += 1
+                    total_message_count += 1
+
                 # Cleanup for next run
                 fido_object.close()
+                print ''
+                print u'Total Messages This Packet -> ' + str(message_count)
+                print u'Total Messages Count -> ' + str(total_message_count)
 
         finally:
             # Clear the unpack_folder here lateron, leave for testing, just overwrites!
