@@ -93,8 +93,6 @@ def read_cstring(file_object, offset):
             break
 
         newstr += str(byte)
-        #offset += len(newstr) + 1
-
     return newstr
 
 
@@ -114,8 +112,6 @@ def read_kstring(file_object, offset):
             break
 
         newstr += str(byte)
-        #offset += len(newstr) + 1
-
     return newstr
 
 '''
@@ -139,12 +135,7 @@ def read_message_text(file_object, offset):
 
         my_list.append(chunk)
 
-    # print my_list
-    # new_string + ''.join(map(str, my_list))
-
-    ''' Before this is returned, we need to break up the kludge and tag lines'''
-
-    return new_string
+    return my_list
 
 
 def main():
@@ -156,13 +147,13 @@ def main():
 
     assert os.path.isdir(inbound_folder)
 
-    for filepath_zip in glob.glob(os.path.join(inbound_folder, '*.*')):
+    for filepath_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
         # Uncompress packet bundles, then loop to read packet/message headers/messages
         try:
             with zipfile.ZipFile(filepath_zip) as zip_obj:
                 zip_obj.extractall(unpack_folder)
 
-            packet_path = os.path.join(unpack_folder, '*.pkt')
+            packet_path = os.path.join(unpack_folder, u'*.pkt')
             print packet_path
             assert os.path.isdir(unpack_folder)
 
@@ -170,83 +161,120 @@ def main():
                 # Parse Each Packet for the Header first.
                 print u'Mail Packet: ' + file_name
 
+                # loop Each message inside of a packet
                 fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
+
+                try:
+                    # make Sure we don't read past the end of the file!
+                    packet_header_read = fido_object.read()[:58]
+                except EOFError:
+                        # move to next packet if were at the end.
+                        break
+                    
+                if not packet_header_read:                    
+                    break
+
+                # Make sure we have correct size! Otherwise were done.
+                print 'packet_header_read len: ' + str(len(packet_header_read))
+                if len(packet_header_read) < 58:
+                        break
+
+                
+
                 fido_header = FidonetPacketHeader(
-                    *struct.unpack(_struct_fidonet_packet, fido_object.read()[:58]))
+                    *struct.unpack(_struct_fidonet_packet, packet_header_read))
+
                 assert isinstance(fido_header, object)
                 print fido_header
 
-                # Reset Position to right after Fido Header
-                fido_object.seek(struct.calcsize(_struct_fidonet_packet))
+                offset = struct.calcsize(_struct_fidonet_packet)
+                while True:
 
-                # Try to parse the message header
-                fido_message_header = FidonetMessageHeader(
-                    *struct.unpack(_struct_fidonet_message_header, fido_object.read()[:14]))
-                assert isinstance(fido_message_header, object)
-                print fido_message_header
+                    # Reset Position to right after Fido Header
+                    fido_object.seek(offset)
 
-                # Update The Offset
-                offset = struct.calcsize(_struct_fidonet_packet) + struct.calcsize(_struct_fidonet_message_header)
+                    # Try to parse the message header
+                    try:
+                        # make Sure we don't read past the end of the file!
+                        message_header_read = fido_object.read()[:14]
+                    except EOFError:
+                        # move to next packet if were at the end.
+                        break
 
-                # Next move back to the next position
+                    if not packet_header_read:                    
+                    break
+                    
+                    # Make sure we have correct size! Otherwise were done.
+                    print 'message_header_read len: ' + str(len(message_header_read))
+                    if len(message_header_read) < 14:
+                        break
 
-                """ Next we need to parse For '\x00' terminated strings.
-                ('20s', 'dateTime'),
-                ('36s', 'toUsername'),
-                ('36s', 'fromUsername'),
-                ('72s', 'subject')
-                """
+                    fido_message_header = FidonetMessageHeader(
+                        *struct.unpack(_struct_fidonet_message_header, message_header_read))
 
-                # Use cleaner way to keep track of offset!!
-                newstr = read_cstring(fido_object, offset)
-                print u'DateTime: ' + newstr
+                    assert isinstance(fido_message_header, object)
+                    print fido_message_header
 
-                offset += len(newstr) + 1
-                newstr = read_cstring(fido_object, offset)
-                print u'To (UserName): ' + newstr
+                    # Update The Offset
+                    offset += struct.calcsize(_struct_fidonet_message_header)
 
-                offset += len(newstr) + 1
-                newstr = read_cstring(fido_object, offset)
-                print u'From (UserName): ' + newstr
+                    # Next move back to the next position
 
-                offset += len(newstr) + 1
-                newstr = read_cstring(fido_object, offset)
-                print u'Subject: ' + newstr
+                    """ Next we need to parse For '\x00' terminated strings.
+                    ('20s', 'dateTime'),
+                    ('36s', 'toUsername'),
+                    ('36s', 'fromUsername'),
+                    ('72s', 'subject')
+                    """
 
-                # We now read the entire message up to null terminator
-                # some fields terminate with 0x9d, and start with
-                # ie AREA:%s\x0d
-                # Other fields : Kludge Lines
-                # "\x01""PID:",5
-                # "\x01""MSGID:",7
-                # "\x01""REPLY:",7
-                # "\x01""FLAGS:",7
-                # "\x01""INTL",5
-                # "\x01""TOPT",5
-                # "\x01""FMPT",5
-                # SEEN-BY:
-                # "\01" "PATH: "
-                # if(flagsbuf[0])
-                # strcat((char *)flagsbuf,(char *)"\x0d");
-                # " * Origin: ",11
-                # TID
+                    # Use cleaner way to keep track of offset!!
+                    newstr = read_cstring(fido_object, offset)
+                    offset += len(newstr) + 1
+                    print u'DateTime: ' + newstr
 
-                '''
-                newstr = fido_object.read(200)
-                offset += 200
-                fido_object.seek(offset)
 
-                sys.stdout.write(newstr)
-                print ''
-                '''
+                    newstr = read_cstring(fido_object, offset)
+                    offset += len(newstr) + 1
+                    print u'To (UserName): ' + newstr
 
-                offset += len(newstr) + 1
-                newstr = read_message_text(fido_object, offset)
-                sys.stdout.write(newstr)
+                    newstr = read_cstring(fido_object, offset)
+                    offset += len(newstr) + 1
+                    print u'From (UserName): ' + newstr
 
-                offset += len(newstr) + 1
-                newstr = read_message_text(fido_object, offset)
-                sys.stdout.write(newstr)
+                    newstr = read_cstring(fido_object, offset)
+                    offset += len(newstr) + 1
+                    print u'Subject: ' + newstr
+
+                    # We now read the entire message up to null terminator
+                    # some fields terminate with 0x9d, and start with
+                    # ie AREA:%s\x0d
+                    # Other fields : Kludge Lines
+                    # "\x01""PID:",5
+                    # "\x01""MSGID:",7
+                    # "\x01""REPLY:",7
+                    # "\x01""FLAGS:",7
+                    # "\x01""INTL",5
+                    # "\x01""TOPT",5
+                    # "\x01""FMPT",5
+                    # SEEN-BY:
+                    # "\01" "PATH: "
+                    # if(flagsbuf[0])
+                    # strcat((char *)flagsbuf,(char *)"\x0d");
+                    # " * Origin: ",11
+                    # TID
+
+                    '''
+                    newstr = fido_object.read(200)
+                    offset += 200
+                    fido_object.seek(offset)
+
+                    sys.stdout.write(newstr)
+                    print ''
+                    '''
+
+                    message_list = read_message_text(fido_object, offset)
+                    offset += len(message_list) + 1
+                    print message_list
 
                 # Cleanup for next run
                 fido_object.close()
