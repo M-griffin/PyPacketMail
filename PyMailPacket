@@ -9,22 +9,25 @@
     Reading and Writing mail packets.
 """
 
-__author__     = "Michael Griffin"
-__copyright__  = "Copyright 2015"
-__credits__    = ["Jeff Quast"]
-__license__    = "MIT"
-__version__    = "1.0.0"
-__status__     = "Prototype"
+__author__ = "Michael Griffin"
+__copyright__ = "Copyright 2015"
+__credits__ = ["Jeff Quast"]
+__license__ = "MIT"
+__version__ = "1.0.0"
+__status__ = "Prototype"
 
+import binascii
 import ConfigParser
 import collections
 import zipfile
 import struct
 import glob
+import sys
 import os
 
 
-_struct_fidonet_packetfields = [
+_struct_packet_header_fields = [
+    # Structure Size 58
     ('H', 'origin_node'),
     ('H', 'destination_node'),
     ('H', 'year'),
@@ -54,9 +57,94 @@ _struct_fidonet_packetfields = [
     ('L', 'prod_data')
 ]
 _struct_fidonet_packet = '<{0}'.format(
-    ''.join(struct_val for struct_val, _ in _struct_fidonet_packetfields))
-FidonetPacket = collections.namedtuple(
-    'FidonetPacket', [field_name for _, field_name in _struct_fidonet_packetfields])
+    ''.join(struct_val for struct_val, _ in _struct_packet_header_fields))
+FidonetPacketHeader = collections.namedtuple(
+    'FidonetPacketHeader', [field_name for _, field_name in _struct_packet_header_fields])
+
+_struct_message_header_fields = [
+    # Structure Size 14
+    ('H', 'message_type'),
+    ('H', 'origin_node'),
+    ('H', 'destination_node'),
+    ('H', 'origin_network'),
+    ('H', 'destination_network'),
+    ('H', 'attributes_flags'),
+    ('H', 'cost'),
+]
+_struct_fidonet_message_header = '<{0}'.format(
+    ''.join(struct_val for struct_val, _ in _struct_message_header_fields))
+FidonetMessageHeader = collections.namedtuple(
+    'FidonetMessageHeader', [field_name for _, field_name in _struct_message_header_fields])
+
+
+def read_cstring(file_object, offset):
+    # Function to read text up to null terminator
+    newstr = ""
+    # jump to offset.
+    assert isinstance(offset, object)
+    file_object.seek(offset)
+    while True:
+        # read the file object
+        byte = file_object.read(1)
+        if not byte:
+            break
+        if byte in '\x00':
+            # Break on Null Terminated
+            break
+
+        newstr += str(byte)
+        #offset += len(newstr) + 1
+
+    return newstr
+
+
+def read_kstring(file_object, offset):
+    # Function to read text up to terminator
+    newstr = ""
+    # jump to offset.
+    assert isinstance(offset, object)
+    file_object.seek(offset)
+    while True:
+        # read the file object
+        byte = file_object.read(1)
+        if not byte:
+            break
+        if byte in '0x9d':
+            # Terminated with 157 for Kludge Lines
+            break
+
+        newstr += str(byte)
+        #offset += len(newstr) + 1
+
+    return newstr
+
+'''
+The problem is we can't just place this text into a string
+because of the binary characters, They seem to populate and
+Display from a list perfectly fine, but not a string!
+'''
+
+
+def read_message_text(file_object, offset):
+    # Function to read message text up to null terminator
+    new_string = ""
+    assert isinstance(offset, object)
+    file_object.seek(offset)
+
+    my_list = []
+    for chunk in iter(lambda: file_object.read(1), ''):
+        if chunk in '\x00':
+            break
+        # elif chunk in ('\x01', '\x9d', '0x9d'):
+
+        my_list.append(chunk)
+
+    # print my_list
+    # new_string + ''.join(map(str, my_list))
+
+    ''' Before this is returned, we need to break up the kludge and tag lines'''
+
+    return new_string
 
 
 def main():
@@ -69,7 +157,7 @@ def main():
     assert os.path.isdir(inbound_folder)
 
     for filepath_zip in glob.glob(os.path.join(inbound_folder, '*.*')):
-        #unpack_folder = tempfile.mkdtemp(suffix='unpack-fdn')
+        # Uncompress packet bundles, then loop to read packet/message headers/messages
         try:
             with zipfile.ZipFile(filepath_zip) as zip_obj:
                 zip_obj.extractall(unpack_folder)
@@ -83,8 +171,85 @@ def main():
                 print u'Mail Packet: ' + file_name
 
                 fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
-                fido_packet = FidonetPacket(*struct.unpack(_struct_fidonet_packet, fido_object.read()[:58]))
-                print fido_packet
+                fido_header = FidonetPacketHeader(
+                    *struct.unpack(_struct_fidonet_packet, fido_object.read()[:58]))
+                assert isinstance(fido_header, object)
+                print fido_header
+
+                # Reset Position to right after Fido Header
+                fido_object.seek(struct.calcsize(_struct_fidonet_packet))
+
+                # Try to parse the message header
+                fido_message_header = FidonetMessageHeader(
+                    *struct.unpack(_struct_fidonet_message_header, fido_object.read()[:14]))
+                assert isinstance(fido_message_header, object)
+                print fido_message_header
+
+                # Update The Offset
+                offset = struct.calcsize(_struct_fidonet_packet) + struct.calcsize(_struct_fidonet_message_header)
+
+                # Next move back to the next position
+
+                """ Next we need to parse For '\x00' terminated strings.
+                ('20s', 'dateTime'),
+                ('36s', 'toUsername'),
+                ('36s', 'fromUsername'),
+                ('72s', 'subject')
+                """
+
+                # Use cleaner way to keep track of offset!!
+                newstr = read_cstring(fido_object, offset)
+                print u'DateTime: ' + newstr
+
+                offset += len(newstr) + 1
+                newstr = read_cstring(fido_object, offset)
+                print u'To (UserName): ' + newstr
+
+                offset += len(newstr) + 1
+                newstr = read_cstring(fido_object, offset)
+                print u'From (UserName): ' + newstr
+
+                offset += len(newstr) + 1
+                newstr = read_cstring(fido_object, offset)
+                print u'Subject: ' + newstr
+
+                # We now read the entire message up to null terminator
+                # some fields terminate with 0x9d, and start with
+                # ie AREA:%s\x0d
+                # Other fields : Kludge Lines
+                # "\x01""PID:",5
+                # "\x01""MSGID:",7
+                # "\x01""REPLY:",7
+                # "\x01""FLAGS:",7
+                # "\x01""INTL",5
+                # "\x01""TOPT",5
+                # "\x01""FMPT",5
+                # SEEN-BY:
+                # "\01" "PATH: "
+                # if(flagsbuf[0])
+                # strcat((char *)flagsbuf,(char *)"\x0d");
+                # " * Origin: ",11
+                # TID
+
+                '''
+                newstr = fido_object.read(200)
+                offset += 200
+                fido_object.seek(offset)
+
+                sys.stdout.write(newstr)
+                print ''
+                '''
+
+                offset += len(newstr) + 1
+                newstr = read_message_text(fido_object, offset)
+                sys.stdout.write(newstr)
+
+                offset += len(newstr) + 1
+                newstr = read_message_text(fido_object, offset)
+                sys.stdout.write(newstr)
+
+                # Cleanup for next run
+                fido_object.close()
 
         finally:
             # Clear the unpack_folder here lateron, leave for testing, just overwrites!
