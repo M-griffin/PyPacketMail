@@ -94,28 +94,6 @@ def read_cstring(file_object, offset):
     return new_string
 
 
-''' read_kluge_string Wip, this isn't correct'''
-
-
-def read_kluge_string(file_object, offset):
-    # Function to read text up to terminator
-    new_string = ""
-    # jump to offset.
-    assert isinstance(offset, object)
-    file_object.seek(offset)
-    while True:
-        # read the file object
-        byte = file_object.read(1)
-        if not byte:
-            break
-        if byte in '0x9d':
-            # Terminated with 157 for Kludge Lines
-            break
-
-        new_string += str(byte)
-    return new_string
-
-
 def read_message_text(file_object, offset):
     # Function to read message text up to null terminator
     assert isinstance(offset, object)
@@ -145,10 +123,10 @@ class Message(object):
         self.user_from = user_from
         self.subject = subject
         self.area = None
+        self.tag_line = None
         self.origin_line = None
         self.kludge_lines = collections.OrderedDict()
         self.seen_by = []
-        self.path = []
         self.raw_data = data
         # Clean Message Text, Split with CR, remove any LF!
         self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
@@ -174,32 +152,35 @@ class Message(object):
         while i < len(self.message_lines):
             line = self.message_lines[i]
 
-            # print 'stage 1: '
-
-            if line.startswith('AREA:'):
-                self.area = line.split(':')[1]
-                print 'Area : ' + self.area
-                i += 1
-                continue
-
             if stage == 1:
-                # print 'stage 2'
-                if line.startswith('\x01'):
+
+                if line.startswith('AREA:'):
+                    self.area = line.split(':')[1]
+                    print 'Area : ' + self.area
+                elif line.startswith('\x01'):
                     self.add_kludge(line.strip())
+                elif line.startswith('--- '):
+                    # Tracking Tag Lines might be a little much!
+                    self.tag_line = line
+                    # Leave Tag Line in message text
+                    message_body.append(line)
                 elif line.startswith(' * Origin:'):
+                    # note some systems like Synchronet don't use * !!
+                    # So much for standards!
+                    # need to put range in for this!!
                     self.origin_line = line
+                    # Leave Tag Line in message text
+                    message_body.append(line)
                     stage = 2
                 else:
                     message_body.append(line)
 
             elif stage == 2:
-                # print 'stage 3'
+
                 if line.startswith('\x01'):
                     self.add_kludge(line)
                 elif line.startswith('SEEN-BY:'):
                     self.seen_by.append(line)
-                elif line.startswith('\01'):
-                    self.path = line
                 elif len(line) == 0:
                     pass
                 else:
@@ -211,10 +192,9 @@ class Message(object):
     def __str__(self):
         # Check this, should swap \r ? -MF
         """
-
         :rtype : str
         """
-        return '\n'.join(self.message_lines) + '\n' + self.origin_line
+        return '\n'.join(self.message_lines) + '\n' + str(self.kludge_lines)
 
     def serialize(self):
         # Build The Message for Writing out to Packet
@@ -225,6 +205,7 @@ class Message(object):
 
         for k, vv in self.kludge_lines.items():
             for v in vv:
+                # Check if these needs \r at end of line!!
                 lines.append('\x01%s %s' % (k, v))
 
         lines.extend(self.message_lines)
@@ -260,7 +241,7 @@ def main():
 
             for file_name in os.listdir(unpack_folder):
                 # Parse Each Packet for the Header first.
-                print u'Mail Packet: ' + file_name
+                print u'\r\nMail Packet: ' + file_name
 
                 # Open then Parse Each Packet
                 fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
@@ -321,6 +302,7 @@ def main():
 
                     assert isinstance(fido_message_header, object)
                     print fido_message_header
+                    print ''
 
                     # Update The Offset
                     offset += struct.calcsize(_struct_fidonet_message_header)
