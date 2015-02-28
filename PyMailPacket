@@ -93,6 +93,7 @@ def read_cstring(file_object, offset):
         new_string += str(byte)
     return new_string
 
+
 ''' read_kluge_string Wip, this isn't correct'''
 
 
@@ -120,15 +121,120 @@ def read_message_text(file_object, offset):
     assert isinstance(offset, object)
     file_object.seek(offset)
 
-    my_list = []
+    # my_list = []
+    message_string = ""
     for chunk in iter(lambda: file_object.read(1), ''):
         if chunk in '\x00':
             break
 
         # elif chunk in ('\x01', '\x9d', '0x9d'):
-        my_list.append(chunk)
+        # my_list.append(chunk)
+        message_string += chunk
 
-    return my_list
+    return message_string
+
+
+class Message(object):
+    # Message Object that will be pasted into.
+    def __init__(self, data, user_to, user_from, subject):
+        """
+
+        :type self: str
+        """
+        self.user_to = user_to
+        self.user_from = user_from
+        self.subject = subject
+        self.area = None
+        self.origin_line = None
+        self.kludge_lines = collections.OrderedDict()
+        self.seen_by = []
+        self.path = []
+        self.raw_data = data
+        # Clean Message Text, Split with CR, remove any LF!
+        self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
+        self.parse_lines()
+
+    def add_kludge(self, line):
+        # Separates Kludge Lines into An Array of Fields
+        k, v = line.split(None, 1)
+        k = k[1:]
+
+        if k in self.kludge_lines:
+            assert isinstance(v, object)
+            self.kludge_lines[k].append(v)
+        else:
+            self.kludge_lines[k] = [v]
+
+    def parse_lines(self):
+        # Breaks up the message data into fields
+        stage = 1
+        message_body = []
+
+        i = 0
+        while i < len(self.message_lines):
+            line = self.message_lines[i]
+
+            # print 'stage 1: '
+
+            if line.startswith('AREA:'):
+                self.area = line.split(':')[1]
+                print 'Area : ' + self.area
+                i += 1
+                continue
+
+            if stage == 1:
+                # print 'stage 2'
+                if line.startswith('\x01'):
+                    self.add_kludge(line.strip())
+                elif line.startswith(' * Origin:'):
+                    self.origin_line = line
+                    stage = 2
+                else:
+                    message_body.append(line)
+
+            elif stage == 2:
+                # print 'stage 3'
+                if line.startswith('\x01'):
+                    self.add_kludge(line)
+                elif line.startswith('SEEN-BY:'):
+                    self.seen_by.append(line)
+                elif line.startswith('\01'):
+                    self.path = line
+                elif len(line) == 0:
+                    pass
+                else:
+                    raise ValueError('Unexpected: %s' % line)
+            i += 1
+
+        self.message_lines = message_body
+
+    def __str__(self):
+        # Check this, should swap \r ? -MF
+        """
+
+        :rtype : str
+        """
+        return '\n'.join(self.message_lines) + '\n' + self.origin_line
+
+    def serialize(self):
+        # Build The Message for Writing out to Packet
+        lines = []
+
+        if self.area:
+            lines.append('AREA:%s' % self.area)
+
+        for k, vv in self.kludge_lines.items():
+            for v in vv:
+                lines.append('\x01%s %s' % (k, v))
+
+        lines.extend(self.message_lines)
+
+        if self.origin_line:
+            lines.append(self.origin_line)
+
+        lines.extend(self.seen_by)
+
+        # return fts0001.MessageBody.build('\r'.join(lines))
 
 
 def main():
@@ -163,8 +269,8 @@ def main():
                     # make Sure we don't read past the end of the file!
                     packet_header_read = fido_object.read()[:58]
                 except EOFError:
-                        # move to next packet if were at the end.
-                        break
+                    # move to next packet if were at the end.
+                    break
 
                 if not packet_header_read:
                     # move to next packet, log error here
@@ -173,8 +279,8 @@ def main():
                 # Make sure we have correct size! Otherwise were done.
                 # print 'packet_header_read len: ' + str(len(packet_header_read))
                 if len(packet_header_read) < 58:
-                        # End of File can have (2) Bytes, catch this.
-                        break
+                    # End of File can have (2) Bytes, catch this.
+                    break
 
                 # Read the Packet Header
                 fido_header = FidonetPacketHeader(
@@ -228,21 +334,21 @@ def main():
                     """
 
                     # Use cleaner way to keep track of offset!!
-                    new_string = read_cstring(fido_object, offset)
-                    offset += len(new_string) + 1
-                    print u'DateTime: ' + new_string
+                    date_time_string = read_cstring(fido_object, offset)
+                    offset += len(date_time_string) + 1
+                    print u'DateTime: ' + date_time_string
 
-                    new_string = read_cstring(fido_object, offset)
-                    offset += len(new_string) + 1
-                    print u'To (UserName): ' + new_string
+                    username_to = read_cstring(fido_object, offset)
+                    offset += len(username_to) + 1
+                    print u'To (UserName): ' + username_to
 
-                    new_string = read_cstring(fido_object, offset)
-                    offset += len(new_string) + 1
-                    print u'From (UserName): ' + new_string
+                    username_from = read_cstring(fido_object, offset)
+                    offset += len(username_from) + 1
+                    print u'From (UserName): ' + username_from
 
-                    new_string = read_cstring(fido_object, offset)
-                    offset += len(new_string) + 1
-                    print u'Subject: ' + new_string
+                    subject_string = read_cstring(fido_object, offset)
+                    offset += len(subject_string) + 1
+                    print u'Subject: ' + subject_string
 
                     # We now read the entire message up to null terminator
                     # some fields terminate with 0x9d, and start with
@@ -263,9 +369,12 @@ def main():
                     # TID
 
                     # Read in entire text of message (parse out after, kludge and tag/origin lines)
-                    message_list = read_message_text(fido_object, offset)
-                    offset += len(message_list) + 1
-                    print message_list
+                    # message_list = read_message_text(fido_object, offset)
+                    message_string = read_message_text(fido_object, offset)
+                    offset += len(message_string) + 1
+                    # print message_list
+
+                    print Message(message_string, username_to, username_from, subject_string)
 
                     message_count += 1
                     total_message_count += 1
