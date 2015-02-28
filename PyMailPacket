@@ -326,28 +326,8 @@ def main():
                     print u'Subject: ' + subject_string
 
                     # We now read the entire message up to null terminator
-                    # some fields terminate with 0x9d, and start with
-                    # ie AREA:%s \x0d or \r!
-                    # Other fields start with \x01: Kludge Lines
-                    # "\x01""PID:",5
-                    # "\x01""MSGID:",7
-                    # "\x01""REPLY:",7
-                    # "\x01""FLAGS:",7
-                    # "\x01""INTL",5
-                    # "\x01""TOPT",5
-                    # "\x01""FMPT",5
-                    # SEEN-BY:
-                    # "\01" "PATH: "
-                    # if(flagsbuf[0])
-                    # strcat((char *)flagsbuf,(char *)"\x0d");
-                    # " * Origin: ",11
-                    # TID
-
-                    # Read in entire text of message (parse out after, kludge and tag/origin lines)
-                    # message_list = read_message_text(fido_object, offset)
                     message_string = read_message_text(fido_object, offset)
                     offset += len(message_string) + 1
-                    # print message_list
 
                     print Message(message_string, username_to, username_from, subject_string)
 
