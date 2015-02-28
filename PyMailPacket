@@ -46,7 +46,7 @@ _struct_packet_header_fields = [
     ('H', 'aux_network'),
     ('H', 'capWordA'),
     ('B', 'prod_code_hi'),
-    ('B', 'pRevMinor'),
+    ('B', 'revision_minor'),
     ('H', 'capWordB'),
     ('H', 'origin_zone2'),
     ('H', 'destination_zone2'),
@@ -99,20 +99,16 @@ def read_message_text(file_object, offset):
     assert isinstance(offset, object)
     file_object.seek(offset)
 
-    # my_list = []
     message_string = ""
     for chunk in iter(lambda: file_object.read(1), ''):
         if chunk in '\x00':
             break
 
-        # elif chunk in ('\x01', '\x9d', '0x9d'):
-        # my_list.append(chunk)
         message_string += chunk
-
     return message_string
 
 
-class Message(object):
+class Message():
     # Message Object that will be pasted into.
     def __init__(self, data, user_to, user_from, subject):
         """
@@ -130,30 +126,28 @@ class Message(object):
         self.raw_data = data
         # Clean Message Text, Split with CR, remove any LF!
         self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
+        # Initial method when we enter the class.
         self.parse_lines()
 
     def add_kludge(self, line):
         # Separates Kludge Lines into An Array of Fields
-        k, v = line.split(None, 1)
-        k = k[1:]
+        key, value = line.split(None, 1)
+        key = key[1:]
 
-        if k in self.kludge_lines:
-            assert isinstance(v, object)
-            self.kludge_lines[k].append(v)
+        if key in self.kludge_lines:
+            assert isinstance(value, object)
+            self.kludge_lines[key].append(value)
         else:
-            self.kludge_lines[k] = [v]
+            self.kludge_lines[key] = [value]
 
     def parse_lines(self):
         # Breaks up the message data into fields
         stage = 1
         message_body = []
 
-        i = 0
-        while i < len(self.message_lines):
-            line = self.message_lines[i]
-
+        for line in self.message_lines:
             if stage == 1:
-
+                # Start and Middle of Message Text
                 if line.startswith('AREA:'):
                     self.area = line.split(':')[1]
                     print 'Area : ' + self.area
@@ -167,7 +161,7 @@ class Message(object):
                 elif line.startswith(' * Origin:'):
                     # note some systems like Synchronet don't use * !!
                     # So much for standards!
-                    # need to put range in for this!!
+                    # need to put range in for this!! +3, 8
                     self.origin_line = line
                     # Leave Tag Line in message text
                     message_body.append(line)
@@ -176,7 +170,7 @@ class Message(object):
                     message_body.append(line)
 
             elif stage == 2:
-
+                # Stage 2 After Message Text
                 if line.startswith('\x01'):
                     self.add_kludge(line)
                 elif line.startswith('SEEN-BY:'):
@@ -185,7 +179,6 @@ class Message(object):
                     pass
                 else:
                     raise ValueError('Unexpected: %s' % line)
-            i += 1
 
         self.message_lines = message_body
 
@@ -203,10 +196,10 @@ class Message(object):
         if self.area:
             lines.append('AREA:%s' % self.area)
 
-        for k, vv in self.kludge_lines.items():
-            for v in vv:
+        for key, kludge_value in self.kludge_lines.items():
+            for value in kludge_value:
                 # Check if these needs \r at end of line!!
-                lines.append('\x01%s %s' % (k, v))
+                lines.append('\x01%s %s' % (key, value))
 
         lines.extend(self.message_lines)
 
