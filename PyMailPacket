@@ -94,13 +94,13 @@ class FlagBits2(ctypes.LittleEndianStructure):
 
 
 class Flags(ctypes.Union):
-    _fields_ = [("b", FlagBits),
-                ("value", c_uint8)]
+    _fields_ = [('bit', FlagBits),
+                ('in_value', c_uint8)]
 
 
 class Flags2(ctypes.Union):
-    _fields_ = [("b", FlagBits2),
-                ("value", c_uint8)]
+    _fields_ = [('bit', FlagBits2),
+                ('in_value', c_uint8)]
 
 
 class SetFlags():
@@ -116,30 +116,30 @@ class SetFlags():
 
     def set_flags(self):
         attributes = Flags()
-        attributes.value = self.field
+        attributes.in_value = self.field
 
         attributes2 = Flags2()
-        attributes2.value = self.field2
+        attributes2.in_value = self.field2
 
         # Not the most elegant!  appears to work.
         # However i want more verification.
-        print attributes.b.private
-        print attributes.b.crash
-        print attributes.b.received
-        print attributes.b.sent
-        print attributes.b.file_attach
-        print attributes.b.in_transit
-        print attributes.b.orphan
-        print attributes.b.kill_sent
+        print attributes.bit.private
+        print attributes.bit.crash
+        print attributes.bit.received
+        print attributes.bit.sent
+        print attributes.bit.file_attach
+        print attributes.bit.in_transit
+        print attributes.bit.orphan
+        print attributes.bit.kill_sent
         print ' '
-        print attributes2.b.local
-        print attributes2.b.hold
-        print attributes2.b.unused
-        print attributes2.b.file_request
-        print attributes2.b.want_receipt
-        print attributes2.b.is_receipt
-        print attributes2.b.audit
-        print attributes2.b.file_update
+        print attributes2.bit.local
+        print attributes2.bit.hold
+        print attributes2.bit.unused
+        print attributes2.bit.file_request
+        print attributes2.bit.want_receipt
+        print attributes2.bit.is_receipt
+        print attributes2.bit.audit
+        print attributes2.bit.file_update
 
 
 _struct_message_header_fields = [
