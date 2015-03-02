@@ -299,8 +299,6 @@ class Message():
 
         lines.extend(self.seen_by)
 
-        # return fts0001.MessageBody.build('\r'.join(lines))
-
 
 def main():
     # Get Path to Fido Packets from Config file.
@@ -426,7 +424,7 @@ def main():
                     message_string = read_message_text(fido_object, offset)
                     offset += len(message_string) + 1
 
-                    # Breaks up the message ans seperates out kludge lines from text.
+                    # Breaks up the message and separates out kludge lines from text.
                     print Message(message_string, username_to, username_from, subject_string)
 
                     message_count += 1
