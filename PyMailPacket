@@ -237,10 +237,10 @@ class Message():
                     # Leave Tag Line in message text
                     message_body.append(line)
 
-                elif line.startswith(' * Origin:'):
+                # str.startswith(str, beg=0,end=len(string));
+                elif 'Origin:' in line[2:10]:
                     # note some systems like Synchronet doesn't use * for origin!!
-                    # So much for standards!
-                    # need to put range in for this!! +3, 8
+                    # need to put range in for this!! +2, 10
                     self.origin_line = line
                     # Leave Tag Line in message text
                     message_body.append(line)
