@@ -25,7 +25,12 @@ import glob
 import os
 
 from ctypes import *
-#c_uint8 = ctypes.c_uint8
+
+# Get Path to Fido Packets from Config file.
+config = ConfigParser.ConfigParser()
+config.read(u'mailpacket.conf')
+inbound_folder = config.get(u'mailpacket', u'inbound')
+unpack_folder = config.get(u'mailpacket', u'unpack')
 
 
 _struct_packet_header_fields = [
@@ -66,7 +71,7 @@ FidonetPacketHeader = collections.namedtuple(
 
 
 class FlagBits(Structure):
-    # Bit field structure for message header flags
+    # Captures the 1st Set of Bit Flags in the Message Header
     _fields_ = [
         ('private',      c_uint8, 1),  # asByte & 1
         ('crash',        c_uint8, 1),  # asByte & 2
@@ -79,13 +84,12 @@ class FlagBits(Structure):
     ]
 
     def get_dict(self):
+        # return ordered fields of bits
         return collections.OrderedDict((f, getattr(self, f)) for f, v, i in self._fields_)
 
 
 class FlagBits2(Structure):
-    # Bit field structure for message header flags
-    # Split from H type, so this really starts at 1
-    # like the above structure now.
+    # Captures the 2nd Set of Bit Flags in the Message Header
     _fields_ = [
         ('local',        c_uint8, 1),  # asByte & 256
         ('hold',         c_uint8, 1),  # asByte & 512
@@ -98,22 +102,27 @@ class FlagBits2(Structure):
     ]
 
     def get_dict(self):
+        # return ordered fields of bits
         return collections.OrderedDict((f, getattr(self, f)) for f, v, i in self._fields_)
 
 
 class Flags(Union):
+    # Union to set the in Value (int) flips the appropriate bits flags
+    # in_value can also be used to get the value of all set flags
     _fields_ = [('bit', FlagBits),
                 ('in_value', c_uint8)]
 
 
 class Flags2(Union):
+    # Union to set the in Value (int) flips the appropriate bits flags
+    # in_value can also be used to get the value of all set flags
     _fields_ = [('bit', FlagBits2),
                 ('in_value', c_uint8)]
 
 
 class SetFlags():
-    # Class to Bundle Settings of Bit Flags for Attributes
-    field  = None
+    # Class to handle Bit Flags for Message Attributes
+    field = None
     field2 = None
 
     def __init__(self, field, field2):
@@ -133,10 +142,10 @@ class SetFlags():
         attributes2 = Flags2()
         attributes2.in_value = self.field2
 
-        # Print out first 8 Bits
+        # Test Print out first 8 Bits
         print attributes.bit.get_dict()
 
-        # Print out Second 8 Bits
+        # Test Print out Second 8 Bits
         print attributes2.bit.get_dict()
 
 
@@ -190,7 +199,7 @@ def read_message_text(file_object, offset):
     return message_string
 
 
-class Message():
+class Message(object):
     # Message Object that will be pasted into.
     def __init__(self, data, user_to, user_from, subject):
         """
@@ -228,7 +237,11 @@ class Message():
         message_body = []
 
         for line in self.message_lines:
-            if stage == 1:
+
+            if len(line) == 0:
+                pass
+
+            elif stage == 1:
                 # Start and Middle of Message Text
                 if line.startswith('AREA:'):
                     self.area = line.split(':')[1]
@@ -243,7 +256,6 @@ class Message():
                     # Leave Tag Line in message text
                     message_body.append(line)
 
-                # str.startswith(str, beg=0,end=len(string));
                 elif 'Origin:' in line[2:10]:
                     # note some systems like Synchronet doesn't use * for origin!!
                     # need to put range in for this!! +2, 10
@@ -256,15 +268,12 @@ class Message():
                     message_body.append(line)
 
             elif stage == 2:
-                # Stage 2 After Message Text
+                # Stage 2 After Origin Line Only
                 if line.startswith('\x01'):
                     self.add_kludge(line)
 
                 elif line.startswith('SEEN-BY:'):
                     self.seen_by.append(line)
-
-                elif len(line) == 0:
-                    pass
 
                 else:
                     raise ValueError('Unexpected: %s' % line)
@@ -298,71 +307,51 @@ class Message():
         lines.extend(self.seen_by)
 
 
-def main():
-    # Get Path to Fido Packets from Config file.
-    config = ConfigParser.ConfigParser()
-    config.read(u'mailpacket.conf')
-    inbound_folder = config.get(u'mailpacket', u'inbound')
-    unpack_folder = config.get(u'mailpacket', u'unpack')
+class ReadPackets(object):
 
-    print inbound_folder
-    assert os.path.isdir(inbound_folder)
+    def __init__(self, packet_processing):
+        # Inbound or Outbound processing.
+        """
 
-    for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
-        # Uncompress packet bundles, then loop to read packet/message headers/messages
-        try:
-            with zipfile.ZipFile(file_path_zip) as zip_obj:
-                zip_obj.extractall(unpack_folder)
+        :type packet_processing: str
+        """
+        _packet_processing = packet_processing
+        if _packet_processing in 'read':
+            self.process_inbound()
 
-            packet_path = os.path.join(unpack_folder, u'*.pkt')
-            print packet_path
-            assert os.path.isdir(unpack_folder)
+    @staticmethod
+    def process_inbound():
+        # Process all packets waiting in the inbound_folder
 
-            total_message_count = 0
+        """
 
-            for file_name in os.listdir(unpack_folder):
-                # Parse Each Packet for the Header first.
-                print u'\r\nMail Packet: ' + file_name
+        :rtype : none
+        """
+        print inbound_folder
+        assert os.path.isdir(inbound_folder)
 
-                # Open then Parse Each Packet
-                fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
+        for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
+            # Uncompress packet bundles, then loop to read packet/message headers/messages
+            try:
+                with zipfile.ZipFile(file_path_zip) as zip_obj:
+                    zip_obj.extractall(unpack_folder)
 
-                try:
-                    # make Sure we don't read past the end of the file!
-                    packet_header_read = fido_object.read()[:58]
-                except EOFError:
-                    # move to next packet if were at the end.
-                    break
+                packet_path = os.path.join(unpack_folder, u'*.pkt')
+                print packet_path
+                assert os.path.isdir(unpack_folder)
 
-                if not packet_header_read:
-                    # move to next packet, log error here
-                    break
+                total_message_count = 0
 
-                # Make sure we have correct size! Otherwise were done.
-                # print 'packet_header_read len: ' + str(len(packet_header_read))
-                if len(packet_header_read) < 58:
-                    # End of File can have (2) Bytes, catch this.
-                    break
+                for file_name in os.listdir(unpack_folder):
+                    # Parse Each Packet for the Header first.
+                    print u'\r\nMail Packet: ' + file_name
 
-                # Read the Packet Header
-                fido_header = FidonetPacketHeader(
-                    *struct.unpack(_struct_fidonet_packet, packet_header_read))
+                    # Open then Parse Each Packet
+                    fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
 
-                assert isinstance(fido_header, object)
-                print fido_header
-
-                message_count = 0
-
-                offset = struct.calcsize(_struct_fidonet_packet)
-                while True:
-
-                    # Reset Position to right after Fido Header
-                    fido_object.seek(offset)
-
-                    # Try to parse the message header
                     try:
                         # make Sure we don't read past the end of the file!
-                        message_header_read = fido_object.read()[:14]
+                        packet_header_read = fido_object.read()[:58]
                     except EOFError:
                         # move to next packet if were at the end.
                         break
@@ -372,75 +361,134 @@ def main():
                         break
 
                     # Make sure we have correct size! Otherwise were done.
-                    # print 'message_header_read len: ' + str(len(message_header_read))
-                    if len(message_header_read) < 14:
+                    # print 'packet_header_read len: ' + str(len(packet_header_read))
+                    if len(packet_header_read) < 58:
                         # End of File can have (2) Bytes, catch this.
                         break
 
-                    # Read the Message Header
-                    fido_message_header = FidonetMessageHeader(
-                        *struct.unpack(_struct_fidonet_message_header, message_header_read))
+                    # Read the Packet Header
+                    fido_header = FidonetPacketHeader(
+                        *struct.unpack(_struct_fidonet_packet, packet_header_read))
 
-                    assert isinstance(fido_message_header, object)
-                    print fido_message_header
+                    assert isinstance(fido_header, object)
+                    print fido_header
+
+                    message_count = 0
+
+                    offset = struct.calcsize(_struct_fidonet_packet)
+                    while True:
+
+                        # Reset Position to right after Fido Header
+                        fido_object.seek(offset)
+
+                        # Try to parse the message header
+                        try:
+                            # make Sure we don't read past the end of the file!
+                            message_header_read = fido_object.read()[:14]
+                        except EOFError:
+                            # move to next packet if were at the end.
+                            break
+
+                        if not packet_header_read:
+                            # move to next packet, log error here
+                            break
+
+                        # Make sure we have correct size! Otherwise were done.
+                        # print 'message_header_read len: ' + str(len(message_header_read))
+                        if len(message_header_read) < 14:
+                            # End of File can have (2) Bytes, catch this.
+                            break
+
+                        # Read the Message Header
+                        fido_message_header = FidonetMessageHeader(
+                            *struct.unpack(_struct_fidonet_message_header, message_header_read))
+
+                        assert isinstance(fido_message_header, object)
+                        print fido_message_header
+                        print ''
+
+                        # Test Message Header Flags, that we are reading correctly!!
+                        # Looking good!
+                        # SetFlags(16, 32)
+
+                        SetFlags(fido_message_header.attributes_flags1, fido_message_header.attributes_flags2)
+
+                        # Update The Offset
+                        offset += struct.calcsize(_struct_fidonet_message_header)
+
+                        # Next move back to the next position
+                        """ Next we need to parse For '\x00' terminated strings.
+                        ('20s', 'dateTime'),
+                        ('36s', 'toUsername'),
+                        ('36s', 'fromUsername'),
+                        ('72s', 'subject')
+                        """
+
+                        # Use cleaner way to keep track of offset!!
+                        date_time_string = read_cstring(fido_object, offset)
+                        offset += len(date_time_string) + 1
+                        print u'DateTime: ' + date_time_string
+
+                        username_to = read_cstring(fido_object, offset)
+                        offset += len(username_to) + 1
+                        print u'To (UserName): ' + username_to
+
+                        username_from = read_cstring(fido_object, offset)
+                        offset += len(username_from) + 1
+                        print u'From (UserName): ' + username_from
+
+                        subject_string = read_cstring(fido_object, offset)
+                        offset += len(subject_string) + 1
+                        print u'Subject: ' + subject_string
+
+                        # We now read the entire message up to null terminator
+                        message_string = read_message_text(fido_object, offset)
+                        offset += len(message_string) + 1
+
+                        # Breaks up the message and separates out kludge lines from text.
+                        print Message(message_string, username_to, username_from, subject_string)
+
+                        message_count += 1
+                        total_message_count += 1
+
+                    # Cleanup for next run
+                    fido_object.close()
                     print ''
+                    print u'Total Messages This Packet -> ' + str(message_count)
+                    print u'Total Messages Count       -> ' + str(total_message_count)
 
-                    # Test Message Header Flags, that we are reading correctly!!
-                    # Looking good!
-                    # SetFlags(16, 32)
-                    
-                    SetFlags(fido_message_header.attributes_flags1,
-                            fido_message_header.attributes_flags2)
-                    
-                    
+            finally:
+                # Clear the unpack_folder here later on, leave for testing, just overwrites!
+                print u'Done'
 
-                    # Update The Offset
-                    offset += struct.calcsize(_struct_fidonet_message_header)
 
-                    # Next move back to the next position
-                    """ Next we need to parse For '\x00' terminated strings.
-                    ('20s', 'dateTime'),
-                    ('36s', 'toUsername'),
-                    ('36s', 'fromUsername'),
-                    ('72s', 'subject')
-                    """
+class TossMessages(ReadPackets):
+    # handle incoming messages
+    def __init__(self):
+        # Inbound or Outbound processing.
+        """
 
-                    # Use cleaner way to keep track of offset!!
-                    date_time_string = read_cstring(fido_object, offset)
-                    offset += len(date_time_string) + 1
-                    print u'DateTime: ' + date_time_string
+        :rtype : none
+        """
+        _packet_processing = 'read'
+        super(TossMessages, self).__init__(_packet_processing)
+        
+        
+class ScanMessages(ReadPackets):
+    # handle outgoing messages
+    def __init__(self):
+        # Inbound or Outbound processing.
+        """
 
-                    username_to = read_cstring(fido_object, offset)
-                    offset += len(username_to) + 1
-                    print u'To (UserName): ' + username_to
+        :rtype : none
+        """
+        _packet_processing = 'write'
+        super(ScanMessages, self).__init__(_packet_processing)
+        
 
-                    username_from = read_cstring(fido_object, offset)
-                    offset += len(username_from) + 1
-                    print u'From (UserName): ' + username_from
-
-                    subject_string = read_cstring(fido_object, offset)
-                    offset += len(subject_string) + 1
-                    print u'Subject: ' + subject_string
-
-                    # We now read the entire message up to null terminator
-                    message_string = read_message_text(fido_object, offset)
-                    offset += len(message_string) + 1
-
-                    # Breaks up the message and separates out kludge lines from text.
-                    print Message(message_string, username_to, username_from, subject_string)
-
-                    message_count += 1
-                    total_message_count += 1
-
-                # Cleanup for next run
-                fido_object.close()
-                print ''
-                print u'Total Messages This Packet -> ' + str(message_count)
-                print u'Total Messages Count       -> ' + str(total_message_count)
-
-        finally:
-            # Clear the unpack_folder here later on, leave for testing, just overwrites!
-            print u'Done'
+def main():
+    # Scan for Incoming Message and Import them
+    TossMessages()
 
 
 if __name__ == '__main__':
