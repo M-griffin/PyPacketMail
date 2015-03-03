@@ -68,35 +68,37 @@ FidonetPacketHeader = collections.namedtuple(
 class FlagBits(Structure):
     # Bit field structure for message header flags
     _fields_ = [
-        ('private',      c_uint8),  # asByte & 1
-        ('crash',        c_uint8),  # asByte & 2
-        ('received',     c_uint8),  # asByte & 4
-        ('sent',         c_uint8),  # asByte & 8
-        ('file_attach',  c_uint8),  # asByte & 16
-        ('in_transit',   c_uint8),  # asByte & 32
-        ('orphan',       c_uint8),  # asByte & 64
-        ('kill_sent',    c_uint8),  # asByte & 128
+        ('private',      c_uint8, 1),  # asByte & 1
+        ('crash',        c_uint8, 1),  # asByte & 2
+        ('received',     c_uint8, 1),  # asByte & 4
+        ('sent',         c_uint8, 1),  # asByte & 8
+        ('file_attach',  c_uint8, 1),  # asByte & 16
+        ('in_transit',   c_uint8, 1),  # asByte & 32
+        ('orphan',       c_uint8, 1),  # asByte & 64
+        ('kill_sent',    c_uint8, 1),  # asByte & 128
     ]
 
     def get_dict(self):
-        return collections.OrderedDict((f, getattr(self, f)) for f, v in self._fields_)
+        return collections.OrderedDict((f, getattr(self, f)) for f, v, i in self._fields_)
 
 
 class FlagBits2(Structure):
     # Bit field structure for message header flags
+    # Split from H type, so this really starts at 1
+    # like the above structure now.
     _fields_ = [
-        ('local',        c_uint8),  # asByte & 256
-        ('hold',         c_uint8),  # asByte & 512
-        ('unused',       c_uint8),  # asByte & 1024
-        ('file_request', c_uint8),  # asByte & 2048
-        ('want_receipt', c_uint8),  # asByte & 4096
-        ('is_receipt',   c_uint8),  # asByte & 8192
-        ('audit',        c_uint8),  # asByte & 16384
-        ('file_update',  c_uint8),  # asByte & 32768
+        ('local',        c_uint8, 1),  # asByte & 256
+        ('hold',         c_uint8, 1),  # asByte & 512
+        ('unused',       c_uint8, 1),  # asByte & 1024
+        ('file_request', c_uint8, 1),  # asByte & 2048
+        ('want_receipt', c_uint8, 1),  # asByte & 4096
+        ('is_receipt',   c_uint8, 1),  # asByte & 8192
+        ('audit',        c_uint8, 1),  # asByte & 16384
+        ('file_update',  c_uint8, 1),  # asByte & 32768
     ]
 
     def get_dict(self):
-        return collections.OrderedDict((f, getattr(self, f)) for f, v in self._fields_)
+        return collections.OrderedDict((f, getattr(self, f)) for f, v, i in self._fields_)
 
 
 class Flags(Union):
@@ -116,6 +118,10 @@ class SetFlags():
 
     def __init__(self, field, field2):
         # get flags from message header
+        """
+
+        :rtype : None
+        """
         self.field = field
         self.field2 = field2
         self.set_flags()
@@ -380,9 +386,13 @@ def main():
                     print ''
 
                     # Test Message Header Flags, that we are reading correctly!!
-                    # WIP
+                    # Looking good!
+                    # SetFlags(16, 32)
+                    
                     SetFlags(fido_message_header.attributes_flags1,
-                             fido_message_header.attributes_flags2)
+                            fido_message_header.attributes_flags2)
+                    
+                    
 
                     # Update The Offset
                     offset += struct.calcsize(_struct_fidonet_message_header)
