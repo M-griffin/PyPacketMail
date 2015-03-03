@@ -70,7 +70,7 @@ FidonetPacketHeader = collections.namedtuple(
     'FidonetPacketHeader', [field_name for _, field_name in _struct_packet_header_fields])
 
 
-class FlagBits(Structure):
+class FlagBits(LittleEndianStructure):
     # Captures the 1st Set of Bit Flags in the Message Header
     _fields_ = [
         ('private',      c_uint8, 1),  # asByte & 1
@@ -88,7 +88,7 @@ class FlagBits(Structure):
         return collections.OrderedDict((f, getattr(self, f)) for f, v, i in self._fields_)
 
 
-class FlagBits2(Structure):
+class FlagBits2(LittleEndianStructure):
     # Captures the 2nd Set of Bit Flags in the Message Header
     _fields_ = [
         ('local',        c_uint8, 1),  # asByte & 256
@@ -107,14 +107,14 @@ class FlagBits2(Structure):
 
 
 class Flags(Union):
-    # Union to set the in Value (int) flips the appropriate bits flags
+    # Union to set the In_Value flips the appropriate bits flags
     # in_value can also be used to get the value of all set flags
     _fields_ = [('bit', FlagBits),
                 ('in_value', c_uint8)]
 
 
 class Flags2(Union):
-    # Union to set the in Value (int) flips the appropriate bits flags
+    # Union to set the In_Value flips the appropriate bits flags
     # in_value can also be used to get the value of all set flags
     _fields_ = [('bit', FlagBits2),
                 ('in_value', c_uint8)]
