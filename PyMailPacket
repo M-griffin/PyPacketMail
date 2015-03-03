@@ -24,8 +24,8 @@ import struct
 import glob
 import os
 
-import ctypes
-c_uint8 = ctypes.c_uint8
+from ctypes import *
+#c_uint8 = ctypes.c_uint8
 
 
 _struct_packet_header_fields = [
@@ -65,40 +65,46 @@ FidonetPacketHeader = collections.namedtuple(
     'FidonetPacketHeader', [field_name for _, field_name in _struct_packet_header_fields])
 
 
-class FlagBits(ctypes.LittleEndianStructure):
+class FlagBits(Structure):
     # Bit field structure for message header flags
     _fields_ = [
-        ('private',      c_uint8, 1),  # asByte & 1
-        ('crash',        c_uint8, 1),  # asByte & 2
-        ('received',     c_uint8, 1),  # asByte & 4
-        ('sent',         c_uint8, 1),  # asByte & 8
-        ('file_attach',  c_uint8, 1),  # asByte & 16
-        ('in_transit',   c_uint8, 1),  # asByte & 32
-        ('orphan',       c_uint8, 1),  # asByte & 64
-        ('kill_sent',    c_uint8, 1),  # asByte & 128
+        ('private',      c_uint8),  # asByte & 1
+        ('crash',        c_uint8),  # asByte & 2
+        ('received',     c_uint8),  # asByte & 4
+        ('sent',         c_uint8),  # asByte & 8
+        ('file_attach',  c_uint8),  # asByte & 16
+        ('in_transit',   c_uint8),  # asByte & 32
+        ('orphan',       c_uint8),  # asByte & 64
+        ('kill_sent',    c_uint8),  # asByte & 128
     ]
 
+    def get_dict(self):
+        return collections.OrderedDict((f, getattr(self, f)) for f, v in self._fields_)
 
-class FlagBits2(ctypes.LittleEndianStructure):
+
+class FlagBits2(Structure):
     # Bit field structure for message header flags
     _fields_ = [
-        ('local',        c_uint8, 1),  # asByte & 256
-        ('hold',         c_uint8, 1),  # asByte & 512
-        ('unused',       c_uint8, 1),  # asByte & 1024
-        ('file_request', c_uint8, 1),  # asByte & 2048
-        ('want_receipt', c_uint8, 1),  # asByte & 4096
-        ('is_receipt',   c_uint8, 1),  # asByte & 8192
-        ('audit',        c_uint8, 1),  # asByte & 16384
-        ('file_update',  c_uint8, 1),  # asByte & 32768
+        ('local',        c_uint8),  # asByte & 256
+        ('hold',         c_uint8),  # asByte & 512
+        ('unused',       c_uint8),  # asByte & 1024
+        ('file_request', c_uint8),  # asByte & 2048
+        ('want_receipt', c_uint8),  # asByte & 4096
+        ('is_receipt',   c_uint8),  # asByte & 8192
+        ('audit',        c_uint8),  # asByte & 16384
+        ('file_update',  c_uint8),  # asByte & 32768
     ]
 
+    def get_dict(self):
+        return collections.OrderedDict((f, getattr(self, f)) for f, v in self._fields_)
 
-class Flags(ctypes.Union):
+
+class Flags(Union):
     _fields_ = [('bit', FlagBits),
                 ('in_value', c_uint8)]
 
 
-class Flags2(ctypes.Union):
+class Flags2(Union):
     _fields_ = [('bit', FlagBits2),
                 ('in_value', c_uint8)]
 
@@ -121,25 +127,11 @@ class SetFlags():
         attributes2 = Flags2()
         attributes2.in_value = self.field2
 
-        # Not the most elegant!  appears to work.
-        # However i want more verification.
-        print attributes.bit.private
-        print attributes.bit.crash
-        print attributes.bit.received
-        print attributes.bit.sent
-        print attributes.bit.file_attach
-        print attributes.bit.in_transit
-        print attributes.bit.orphan
-        print attributes.bit.kill_sent
-        print ' '
-        print attributes2.bit.local
-        print attributes2.bit.hold
-        print attributes2.bit.unused
-        print attributes2.bit.file_request
-        print attributes2.bit.want_receipt
-        print attributes2.bit.is_receipt
-        print attributes2.bit.audit
-        print attributes2.bit.file_update
+        # Print out first 8 Bits
+        print attributes.bit.get_dict()
+
+        # Print out Second 8 Bits
+        print attributes2.bit.get_dict()
 
 
 _struct_message_header_fields = [
