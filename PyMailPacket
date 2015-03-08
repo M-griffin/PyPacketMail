@@ -25,13 +25,22 @@ import glob
 import os
 
 from ctypes import *
+from x84.bbs.msgbase import *
 
 # Get Path to Fido Packets from Config file.
 config = ConfigParser.ConfigParser()
 config.read(u'mailpacket.conf')
+
+# Working Folders
 inbound_folder = config.get(u'mailpacket', u'inbound')
 unpack_folder = config.get(u'mailpacket', u'unpack')
+
+# need to make this array of network
+network = config.get(u'mailpacket', u'network')
+
+# need to match network names with node address per network
 node_address = config.get(u'mailpacket', u'node_address')
+
 
 # Make sure the Inbound directory is valid
 assert os.path.isdir(inbound_folder)
@@ -41,6 +50,9 @@ assert os.path.isdir(unpack_folder)
 
 # Check Node address is setup
 assert (node_address != '')
+
+# Make sure we have a network name
+assert (network != '')
 
 
 _struct_packet_header_fields = [
@@ -241,11 +253,12 @@ def print_area_count():
 
 class Message(object):
     # Message Object that will be pasted into.
-    def __init__(self, data, user_to, user_from, subject):
+    def __init__(self, data, date_time, user_to, user_from, subject):
         """
         :rtype : None
         :type self: str
         """
+        self.date_time = date_time
         self.user_to = user_to
         self.user_from = user_from
         self.subject = subject
@@ -259,6 +272,44 @@ class Message(object):
         self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
         # Initial method when we enter the class.
         self.parse_lines()
+
+    def import_messages(self):
+        # hook into x84 and write message to default database and
+        # keep separate database for fido specific fields.
+        from x84.bbs import Msg, DBProxy
+
+        #'author': msg.author,
+        #'subject': msg.subject,
+        #'recipient': msg.recipient,
+        #'parent': parent,
+        #'tags': [tag for tag in msg.tags if tag != network['name']],
+        #'body': u''.join((msg.body, format_origin_line())),
+        #'ctime': to_utctime(msg.ctime)
+
+        # Use this for storing message index and headers
+        # networkdb = DBProxy('{0}'.format(network), use_session=False)
+
+        # Import fido into x84 database
+        msgdb = DBProxy(MSGDB, use_session=False)
+
+        store_msg = Msg()
+        store_msg.recipient = self.user_to
+        store_msg.author = self.user_from
+        store_msg.subject = self.subject
+        store_msg.body = self.message_lines
+        store_msg.tags = set('public')
+        store_msg.tags.add(u''.join('Echomail'))
+        store_msg.tags.add(u''.join(self.area))
+        # store_msg.tags.add(u''.join((net['name'])))
+
+        # Convert Packet String to Date Time format.
+        # We should also get and check UTZ kludge line!  Lateron for offset / Timezone.
+        # 26 Feb 15  18:04:00
+        date_object = datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
+
+        # do not save this message to network, we already received
+        # it from the network, set send_net=False
+        store_msg.save(send_net=False, ctime=to_localtime(date_object))
 
     def add_kludge(self, line):
         # Separates Kludge Lines into An Array of Fields
@@ -328,7 +379,7 @@ class Message(object):
         """
         :rtype : str
         """
-        return '\n'.join(self.message_lines) + '\n' + str(self.kludge_lines)
+        return '\n'.join(self.message_lines)
 
     def serialize(self):
         # Build The Message for Writing out to Packet
@@ -374,6 +425,7 @@ def process_inbound():
     """
 
     print inbound_folder
+    message_count = 0
 
     for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
         # Uncompress packet bundles, then loop to read packet/message headers/messages
@@ -434,7 +486,6 @@ def process_inbound():
 
                 # print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
                 if node_address != packet_address:
-                    # Test is working in reverse!! fuck sakes.
                     print u'Error: packet not addressed to your node: [{0}], destination: [{1}]'.format(
                         node_address, packet_address)
                     break
@@ -443,6 +494,7 @@ def process_inbound():
                 # print fido_header
 
                 offset = struct.calcsize(_struct_fidonet_packet)
+                message_count = 0
                 while True:
 
                     # Reset Position to right after Fido Header
@@ -493,7 +545,7 @@ def process_inbound():
                     # Use cleaner way to keep track of offset!!
                     date_time_string = read_cstring(fido_object, offset)
                     offset += len(date_time_string) + 1
-                    # print u'DateTime: ' + date_time_string
+                    print u'DateTime: ' + date_time_string
 
                     username_to = read_cstring(fido_object, offset)
                     offset += len(username_to) + 1
@@ -513,24 +565,24 @@ def process_inbound():
 
                     # Breaks up the message and separates out kludge lines from text.
                     # print Message(message_string, username_to, username_from, subject_string)
-                    Message(message_string, username_to, username_from, subject_string)
+                    Message(message_string, date_time_string, username_to, username_from, subject_string)
+                    message_count += 1
 
                 # Cleanup for next run
                 fido_object.close()
                 # print ''
-                # print u'Total Messages This Packet -> ' + str(message_count)
+                print u'    Messages This Packet -> ' + str(message_count)
                 # print u'Total Messages Count       -> ' + str(total_message_count)
 
         finally:
             # Clear the unpack_folder here later on, leave for testing, just overwrites!
-            print u'Done'
+            print u'End of Bundle'
+            print ''
 
             # Clear out any packets before running next bundle
             clear_files = glob.glob(os.path.join(unpack_folder, u'*.*'))
             for f in clear_files:
                 os.remove(f)
-
-
 
 
 class TossMessages(ParsePackets):
