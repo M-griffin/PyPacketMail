@@ -486,7 +486,8 @@ def process_inbound():
 
                 # print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
                 if node_address != packet_address:
-                    print u'Error: packet not addressed to your node: [{0}], destination: [{1}]'.format(
+                    print u'Error: packet not addressed to your node: [{0}], ' \
+                          u'destination: [{1}]'.format(
                         node_address, packet_address)
                     break
 
@@ -529,7 +530,8 @@ def process_inbound():
                     # Looking good!
                     # SetFlags(16, 32)
 
-                    SetFlags(fido_message_header.attributes_flags1, fido_message_header.attributes_flags2)
+                    SetFlags(fido_message_header.attributes_flags1, 
+                             fido_message_header.attributes_flags2)
 
                     # Update The Offset
                     offset += struct.calcsize(_struct_fidonet_message_header)
@@ -565,7 +567,8 @@ def process_inbound():
 
                     # Breaks up the message and separates out kludge lines from text.
                     # print Message(message_string, username_to, username_from, subject_string)
-                    Message(message_string, date_time_string, username_to, username_from, subject_string)
+                    Message(message_string, date_time_string, 
+                            username_to, username_from, subject_string)
                     message_count += 1
 
                 # Cleanup for next run
