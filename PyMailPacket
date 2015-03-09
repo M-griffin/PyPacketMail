@@ -17,6 +17,7 @@ __version__ = "1.0.0"
 __status__ = "Prototype"
 
 
+import datetime
 import ConfigParser
 import collections
 import zipfile
@@ -25,6 +26,7 @@ import glob
 import os
 
 from ctypes import *
+import cmdline
 from x84.bbs.msgbase import *
 
 # Get Path to Fido Packets from Config file.
@@ -290,26 +292,32 @@ class Message(object):
         # networkdb = DBProxy('{0}'.format(network), use_session=False)
 
         # Import fido into x84 database
-        msgdb = DBProxy(MSGDB, use_session=False)
+        #msgdb = DBProxy(MSGDB, use_session=False)
+
+        # print self.message_lines
+        # return
 
         store_msg = Msg()
         store_msg.recipient = self.user_to
         store_msg.author = self.user_from
         store_msg.subject = self.subject
-        store_msg.body = self.message_lines
-        store_msg.tags = set('public')
-        store_msg.tags.add(u''.join('Echomail'))
+
+        # Convert from CP437 for high ascii, later on read CHRS kludge for origin character set
+        store_msg.body = unicode('\r'.join(self.message_lines).replace('\x9d', ''), 'CP437')
+        store_msg.tags.add(u''.join('public'))
+        store_msg.tags.add(u''.join('echomail'))
         store_msg.tags.add(u''.join(self.area))
         # store_msg.tags.add(u''.join((net['name'])))
 
         # Convert Packet String to Date Time format.
         # We should also get and check UTZ kludge line!  Lateron for offset / Timezone.
         # 26 Feb 15  18:04:00
-        date_object = datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
+        date_object = datetime.datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
 
+        print date_object
         # do not save this message to network, we already received
         # it from the network, set send_net=False
-        store_msg.save(send_net=False, ctime=to_localtime(date_object))
+        store_msg.save(send_net=False, ctime=date_object)
 
     def add_kludge(self, line):
         # Separates Kludge Lines into An Array of Fields
@@ -350,9 +358,11 @@ class Message(object):
                     # Leave Tag Line in message text
                     message_body.append(line)
 
-                elif 'Origin:' == line[2:10]:
+                elif 'Origin:' in line[2:10]:
                     # note some systems like Synchronet doesn't use * for origin!!
                     # need to put range in for this!! +2, 10
+                    # * Origin:
+                    #print ' *** found origin!!!'
                     self.origin_line = line
                     # Leave Tag Line in message text
                     message_body.append(line)
@@ -373,6 +383,9 @@ class Message(object):
                     raise ValueError('Unexpected: %s' % line)
 
         self.message_lines = message_body
+
+        # Import messages into x84
+        self.import_messages()
 
     def __str__(self):
         # Check this, should swap \r ? -MF
@@ -530,7 +543,7 @@ def process_inbound():
                     # Looking good!
                     # SetFlags(16, 32)
 
-                    SetFlags(fido_message_header.attributes_flags1, 
+                    SetFlags(fido_message_header.attributes_flags1,
                              fido_message_header.attributes_flags2)
 
                     # Update The Offset
@@ -547,7 +560,6 @@ def process_inbound():
                     # Use cleaner way to keep track of offset!!
                     date_time_string = read_cstring(fido_object, offset)
                     offset += len(date_time_string) + 1
-                    print u'DateTime: ' + date_time_string
 
                     username_to = read_cstring(fido_object, offset)
                     offset += len(username_to) + 1
@@ -567,7 +579,7 @@ def process_inbound():
 
                     # Breaks up the message and separates out kludge lines from text.
                     # print Message(message_string, username_to, username_from, subject_string)
-                    Message(message_string, date_time_string, 
+                    Message(message_string, date_time_string,
                             username_to, username_from, subject_string)
                     message_count += 1
 
@@ -613,10 +625,14 @@ class ScanMessages(ParsePackets):
         super(ScanMessages, self).__init__(_packet_processing)
         
 
-def main():
+def main(background_daemon=False):
     # Scan for Incoming Message and Import them
-    TossMessages()
-
+    if not background_daemon:
+        TossMessages()
 
 if __name__ == '__main__':
-    main()
+    import x84.bbs.ini
+    x84.bbs.ini.init(*cmdline.parse_args())
+
+    # do not execute message polling as a background thread.
+    main(background_daemon=False)
