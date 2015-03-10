@@ -1,5 +1,4 @@
 #!/usr/bin/env python2.7
-# vim: set fileencoding=<utf-8> :
 """ PyMailPacket for x/84, http://github.com/jquast/x84
     (c) 2015 Michael Griffin <mrmisticismo@hotmail.com>
     http://github.com/m-griffin/PyMailPacket
@@ -17,7 +16,7 @@ __version__ = "1.0.0"
 __status__ = "Prototype"
 
 
-import datetime
+# import datetime
 import ConfigParser
 import collections
 import zipfile
@@ -227,10 +226,8 @@ area_count = collections.defaultdict(int)
 
 def track_area(area):
     """
-
     :rtype : None
     """
-
     if area_count[area] is not None:
         area_count[area] += 1
     else:
@@ -255,7 +252,8 @@ def print_area_count():
 
 class Message(object):
     # Message Object that will be pasted into.
-    def __init__(self, data, date_time, user_to, user_from, subject):
+    def __init__(self, data, date_time, user_to, user_from,
+                 subject, message_header, packet_header):
         """
         :rtype : None
         :type self: str
@@ -270,6 +268,8 @@ class Message(object):
         self.kludge_lines = collections.OrderedDict()
         self.seen_by = []
         self.raw_data = data
+        self.message_header = message_header
+        self.packet_header = packet_header
         # Clean Message Text, Split with CR, remove any LF!
         self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
         # Initial method when we enter the class.
@@ -294,18 +294,30 @@ class Message(object):
         # Import fido into x84 database
         #msgdb = DBProxy(MSGDB, use_session=False)
 
-        # print self.message_lines
-        # return
+        # Useless, packet and message headers don't have origin address of systems,
+        # only the hub where you pickup the packets!!!!
+        #if self.packet_header.origin_point != 0:
+            # 4D address
+        #    origin_address = '{0}:{1}/{2}.{3}'.format(
+        #        self.packet_header.origin_zone, self.packet_header.origin_network,
+        #        self.packet_header.origin_node, self.packet_header.origin_point)
+        #else:
+            # 3D Address no point.
+        #    origin_address = '{0}:{1}/{2}'.format(
+        #        self.packet_header.origin_zone, self.packet_header.origin_network,
+        #        self.packet_header.origin_node)
 
         store_msg = Msg()
-        store_msg.recipient = self.user_to
-        store_msg.author = self.user_from
-        store_msg.subject = self.subject
+        store_msg.recipient = unicode(self.user_to, 'CP437')
+        store_msg.author = unicode(self.user_from, 'CP437')
+        store_msg.subject = unicode(self.subject, 'CP437')
+
+        # Add Check here for Private Netmail messages
 
         # Convert from CP437 for high ascii, later on read CHRS kludge for origin character set
         store_msg.body = unicode('\r'.join(self.message_lines).replace('\x9d', ''), 'CP437')
         store_msg.tags.add(u''.join('public'))
-        store_msg.tags.add(u''.join('echomail'))
+        store_msg.tags.add(u''.join('echomail'))  # Means Fido Type Network.
         store_msg.tags.add(u''.join(self.area))
         # store_msg.tags.add(u''.join((net['name'])))
 
@@ -338,12 +350,14 @@ class Message(object):
         for line in self.message_lines:
 
             if len(line) == 0:
-                pass
+                # Empty Lines are Newlines
+                message_body.append('')
 
             elif stage == 1:
                 # Start and Middle of Message Text
                 if line.startswith('AREA:'):
-                    self.area = line.split(':')[1].upper()
+                    # grab description config file and translate area name
+                    self.area = line.split(':')[1].lower()
                     # print 'Area : ' + self.area
 
                     # Add count for area
@@ -359,7 +373,7 @@ class Message(object):
                     message_body.append(line)
 
                 elif 'Origin:' in line[2:10]:
-                    # note some systems like Synchronet doesn't use * for origin!!
+                    # note some systems like Synchronet doesn't use * for origin prefix!!
                     # need to put range in for this!! +2, 10
                     # * Origin:
                     #print ' *** found origin!!!'
@@ -368,6 +382,17 @@ class Message(object):
                     message_body.append(line)
                     stage = 2
 
+                elif line.startswith(' SAUCE00'):
+                    # Skip SAUCE record lines!, shouldn't be posted.
+                    continue
+
+                elif line.startswith('\x1ASAUCE00'):
+                    continue
+
+                elif line.endswith('\x04'):
+                    # Skip SAUCE record lines!, shouldn't be posted.
+                    continue
+
                 else:
                     message_body.append(line)
 
@@ -375,6 +400,7 @@ class Message(object):
                 # Stage 2 After Origin Line Only
                 if line.startswith('\x01'):
                     self.add_kludge(line)
+
 
                 elif line.startswith('SEEN-BY:'):
                     self.seen_by.append(line)
@@ -497,7 +523,7 @@ def process_inbound():
                         fido_header.destination_zone, fido_header.destination_network,
                         fido_header.destination_node)
 
-                # print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
+                print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
                 if node_address != packet_address:
                     print u'Error: packet not addressed to your node: [{0}], ' \
                           u'destination: [{1}]'.format(
@@ -522,14 +548,18 @@ def process_inbound():
                         # move to next packet if were at the end.
                         break
 
-                    if not packet_header_read:
+                    if not message_header_read:
                         # move to next packet, log error here
                         break
 
                     # Make sure we have correct size! Otherwise were done.
                     # print 'message_header_read len: ' + str(len(message_header_read))
-                    if len(message_header_read) < 14:
+                    if len(message_header_read) <= 2:
                         # End of File can have (2) Bytes, catch this.
+                        break
+                    elif len(message_header_read) < 14:
+                        # Read was short!
+                        print u'Error: unable to read message header: ' + file_name
                         break
 
                     # Read the Message Header
@@ -537,7 +567,7 @@ def process_inbound():
                         *struct.unpack(_struct_fidonet_message_header, message_header_read))
 
                     assert isinstance(fido_message_header, object)
-                    # print fido_message_header
+                    print fido_message_header
 
                     # Test Message Header Flags, that we are reading correctly!!
                     # Looking good!
@@ -580,7 +610,8 @@ def process_inbound():
                     # Breaks up the message and separates out kludge lines from text.
                     # print Message(message_string, username_to, username_from, subject_string)
                     Message(message_string, date_time_string,
-                            username_to, username_from, subject_string)
+                            username_to, username_from, subject_string,
+                            fido_message_header, fido_header)
                     message_count += 1
 
                 # Cleanup for next run
