@@ -244,36 +244,38 @@ def print_area_count():
             area, area_count[area])
         total_messages += area_count[area]
         total_areas += 1
+        
+    # hard coded for now, this will be setup with dupe checking
+    total_messages_imported = total_messages
 
     print ''
-    print 'Areas: {0} -> Messages: {1} -> Imported.'.format(
-        total_areas, total_messages)
+    print 'Areas: {0} -> Messages: {1} -> Imported -> {2}.'.format(
+        total_areas, total_messages, total_messages_imported)
 
 
 class Message(object):
     # Message Object that will be pasted into.
-    def __init__(self, data, date_time, user_to, user_from,
-                 subject, message_header, packet_header):
+    def __init__(self):
         """
         :rtype : None
         :type self: str
         """
-        self.date_time = date_time
-        self.user_to = user_to
-        self.user_from = user_from
-        self.subject = subject
+        self.date_time = None
+        self.user_to = None
+        self.user_from = None
+        self.subject = None
         self.area = None
         self.tag_line = None
         self.origin_line = None
         self.kludge_lines = collections.OrderedDict()
         self.seen_by = []
-        self.raw_data = data
-        self.message_header = message_header
-        self.packet_header = packet_header
+        self.raw_data = None
+        self.message_header = None
+        self.packet_header = None
         # Clean Message Text, Split with CR, remove any LF!
-        self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
+        self.message_lines = None
         # Initial method when we enter the class.
-        self.parse_lines()
+        #self.parse_lines()
 
     def import_messages(self):
         # hook into x84 and write message to default database and
@@ -288,25 +290,6 @@ class Message(object):
         #'body': u''.join((msg.body, format_origin_line())),
         #'ctime': to_utctime(msg.ctime)
 
-        # Use this for storing message index and headers
-        # networkdb = DBProxy('{0}'.format(network), use_session=False)
-
-        # Import fido into x84 database
-        #msgdb = DBProxy(MSGDB, use_session=False)
-
-        # Useless, packet and message headers don't have origin address of systems,
-        # only the hub where you pickup the packets!!!!
-        #if self.packet_header.origin_point != 0:
-            # 4D address
-        #    origin_address = '{0}:{1}/{2}.{3}'.format(
-        #        self.packet_header.origin_zone, self.packet_header.origin_network,
-        #        self.packet_header.origin_node, self.packet_header.origin_point)
-        #else:
-            # 3D Address no point.
-        #    origin_address = '{0}:{1}/{2}'.format(
-        #        self.packet_header.origin_zone, self.packet_header.origin_network,
-        #        self.packet_header.origin_node)
-
         store_msg = Msg()
         store_msg.recipient = unicode(self.user_to, 'CP437')
         store_msg.author = unicode(self.user_from, 'CP437')
@@ -316,9 +299,17 @@ class Message(object):
 
         # Convert from CP437 for high ascii, later on read CHRS kludge for origin character set
         store_msg.body = unicode('\r'.join(self.message_lines).replace('\x9d', ''), 'CP437')
+
+        # If area is a normal public echo
         store_msg.tags.add(u''.join('public'))
-        store_msg.tags.add(u''.join('echomail'))  # Means Fido Type Network.
-        store_msg.tags.add(u''.join(self.area))
+        store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie agora-net
+        store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
+
+        # if area is not a public echo, add to sysop group tag
+        #store_msg.tags.add(u''.join('sysop'))
+        #store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie agora-net
+        #store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
+
         # store_msg.tags.add(u''.join((net['name'])))
 
         # Convert Packet String to Date Time format.
@@ -346,6 +337,9 @@ class Message(object):
         # Breaks up the message data into fields
         stage = 1
         message_body = []
+
+        # Setup Message Lines by breaking up raw data
+        self.message_lines = [x.strip('\n') for x in self.raw_data.split('\r')]
 
         for line in self.message_lines:
 
@@ -375,22 +369,18 @@ class Message(object):
                 elif 'Origin:' in line[2:10]:
                     # note some systems like Synchronet doesn't use * for origin prefix!!
                     # need to put range in for this!! +2, 10
-                    # * Origin:
-                    #print ' *** found origin!!!'
                     self.origin_line = line
                     # Leave Tag Line in message text
                     message_body.append(line)
                     stage = 2
 
-                elif line.startswith(' SAUCE00'):
-                    # Skip SAUCE record lines!, shouldn't be posted.
-                    continue
-
                 elif line.startswith('\x1ASAUCE00'):
+                    # skip bad characters or records in messages
                     continue
 
                 elif line.endswith('\x04'):
-                    # Skip SAUCE record lines!, shouldn't be posted.
+                    # Skip SAUCE record end lines!, shouldn't be posted.
+                    # bad characters
                     continue
 
                 else:
@@ -401,7 +391,6 @@ class Message(object):
                 if line.startswith('\x01'):
                     self.add_kludge(line)
 
-
                 elif line.startswith('SEEN-BY:'):
                     self.seen_by.append(line)
 
@@ -410,7 +399,7 @@ class Message(object):
 
         self.message_lines = message_body
 
-        # Import messages into x84
+        # Import messages to x84
         self.import_messages()
 
     def __str__(self):
@@ -462,7 +451,6 @@ def process_inbound():
 
     :rtype : none
     """
-
     print inbound_folder
     message_count = 0
 
@@ -511,7 +499,7 @@ def process_inbound():
                     break
 
                 # Validate packet is addressed to this system
-                # Add 5D addresses?
+                # Add 5D addresses? have @domain like @agoranet
                 if fido_header.destination_point != 0:
                     # 4D address
                     packet_address = '{0}:{1}/{2}.{3}'.format(
@@ -523,7 +511,7 @@ def process_inbound():
                         fido_header.destination_zone, fido_header.destination_network,
                         fido_header.destination_node)
 
-                print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
+                # print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
                 if node_address != packet_address:
                     print u'Error: packet not addressed to your node: [{0}], ' \
                           u'destination: [{1}]'.format(
@@ -567,11 +555,6 @@ def process_inbound():
                         *struct.unpack(_struct_fidonet_message_header, message_header_read))
 
                     assert isinstance(fido_message_header, object)
-                    print fido_message_header
-
-                    # Test Message Header Flags, that we are reading correctly!!
-                    # Looking good!
-                    # SetFlags(16, 32)
 
                     SetFlags(fido_message_header.attributes_flags1,
                              fido_message_header.attributes_flags2)
@@ -593,15 +576,12 @@ def process_inbound():
 
                     username_to = read_cstring(fido_object, offset)
                     offset += len(username_to) + 1
-                    # print u'To (UserName): ' + username_to
 
                     username_from = read_cstring(fido_object, offset)
                     offset += len(username_from) + 1
-                    # print u'From (UserName): ' + username_from
 
                     subject_string = read_cstring(fido_object, offset)
                     offset += len(subject_string) + 1
-                    # print u'Subject: ' + subject_string
 
                     # We now read the entire message up to null terminator
                     message_string = read_message_text(fido_object, offset)
@@ -609,16 +589,35 @@ def process_inbound():
 
                     # Breaks up the message and separates out kludge lines from text.
                     # print Message(message_string, username_to, username_from, subject_string)
-                    Message(message_string, date_time_string,
-                            username_to, username_from, subject_string,
-                            fido_message_header, fido_header)
+                    current_message = Message()
+
+                    current_message.date_time = date_time_string
+                    current_message.user_to = username_to
+                    current_message.user_from = username_from
+                    current_message.subject = subject_string
+                    current_message.raw_data = message_string
+                    
+                    # Packet Headers will check for source / destination address
+                    # mainly dupe checking
+                    current_message.packet_header = fido_header
+                    # Message Headers will be checked for Import/Export flags etc.
+                    current_message.message_header = fido_message_header
+
+                    # First Parse the Raw Data into Message Lines and
+                    # break out Kludge lines from text
+                    # if No errors then Import Message to x84
+                    current_message.parse_lines()
+
+
+                    # Replaced with Message Object
+                    # Message(message_string, date_time_string,
+                    #        username_to, username_from, subject_string,
+                    #        fido_message_header, fido_header)
                     message_count += 1
 
                 # Cleanup for next run
                 fido_object.close()
-                # print ''
                 print u'    Messages This Packet -> ' + str(message_count)
-                # print u'Total Messages Count       -> ' + str(total_message_count)
 
         finally:
             # Clear the unpack_folder here later on, leave for testing, just overwrites!
