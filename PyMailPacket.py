@@ -6,6 +6,35 @@
     This is a FidoNet Echomail Scanner / Tosser for x84 bbs.
     This will mimic the basic functionality of Crashmail for
     Reading and Writing mail packets.
+
+    *** Sample INI Section to be added to DEFAULT.INI in X84
+    
+    # Setup for PyPacket Mail {Fidonet Tosser/Scanner}
+    [mailpacket]
+    inbound = /home/pi/Desktop/PyPacketMail/inbound
+    outbound = /home/pi/Desktop/PyPacketMail/outbound
+    pack = /home/pi/Desktop/PyPacketMail/pack
+    unpack = /home/pi/Desktop/PyPacketMail/unpack
+    bad = /home/pi/Desktop/PyPacketMail/bad
+    archive = /home/pi/Desktop/PyPacketMail/archive
+    
+    # Fido Type Network Domain names, seperate with commas.
+    [fido_networks]
+    network_tags = agoranet, fidonet
+    
+    # Network Specific Addresses and Area -> Tag Translations.
+    [agoranet]
+    node_address = 46:1/140
+    export_address = 46:1/100
+    areas = agn_gen: general, agn_ads: bbs_ads, agn_bbs: bbs_discussion, agn_art: art, agn_dev: development, 
+            agn_nix: unix_linux, agn_hub: hub_stats, agn_l46: league46, agn_tst: testing, agn_sys: sysop_area
+    
+    # Network Specific Addresses and Area -> Tag Translations.
+    [fidonet]
+    node_address = 1:154/140
+    export_address = 1:154/10
+    areas = fdn_ent: enthral_bbs
+    
 """
 
 __author__ = "Michael Griffin"
@@ -16,32 +45,70 @@ __version__ = "1.0.0"
 __status__ = "Prototype"
 
 
-# import datetime
-import ConfigParser
 import collections
+import datetime
 import zipfile
 import struct
 import glob
 import os
 
-from ctypes import *
-import cmdline
-from x84.bbs.msgbase import *
+# Reading Binary Packet Formats
+from ctypes import LittleEndianStructure, Union, c_uint8
 
-# Get Path to Fido Packets from Config file.
-config = ConfigParser.ConfigParser()
-config.read(u'mailpacket.conf')
+# x84 specific
+from x84.bbs.ini import init, get_ini
+from x84.cmdline import parse_args
 
-# Working Folders
-inbound_folder = config.get(u'mailpacket', u'inbound')
-unpack_folder = config.get(u'mailpacket', u'unpack')
+# Read in default .x84 INI File.
+init(*parse_args())
 
-# need to make this array of network
-network = config.get(u'mailpacket', u'network')
+# Database to hold last Exported Message Indexes
+INDEXDB = 'pymail_index'
 
-# need to match network names with node address per network
-node_address = config.get(u'mailpacket', u'node_address')
+# Working Folders pull from .x84 Default INI
+inbound_folder = ''.join(get_ini(section='mailpacket', key='inbound', split=True))
+unpack_folder = ''.join(get_ini(section='mailpacket', key='unpack', split=True))
 
+# Test reading and parsing network and area groupings.  We want to match
+# eg. Agoranet, then all associate areas.
+
+print 'inbound_folder: {0}'.format(inbound_folder)
+print 'unpack_folder: {0}'.format(unpack_folder)
+
+# Arrays to Hold Network and Export Addresses
+node_address = {}     # Your Address
+export_address = {}   # Your Network Hub's Address
+network_areas = {}    # Message Areas by network
+
+network_list = get_ini(section='fido_networks', key='network_tags', split=True)
+print 'network_list: ' + ' '.join(network_list)
+
+# Test reading List of Networks
+for network in network_list:
+    # Loop network list and get network section. hard code here for testing.
+    node_address[network] = get_ini(section=network, key='node_address', split=True)
+
+# Make sure we loaded the dict properly.
+for k, v in node_address.items():
+    print 'node_address: {0}, {1}'.format(k, v)
+
+# Test reading List of Networks
+for network in network_list:
+    # Loop network list and get network section. hard code here for testing.
+    export_address[network] = get_ini(section=network, key='export_address', split=True)
+
+# Make sure we loaded the dict properly.
+for k, v in export_address.items():
+    print 'export_address: {0}, {1}'.format(k, v)
+
+# Test reading List of Message Areas per Network
+for network in network_list:
+    # Loop network list and get network section. hard code here for testing.
+    network_areas[network] = get_ini(section=network, key='areas', split=True)
+
+# Make sure we loaded the dict properly.
+for k, v in network_areas.items():
+    print 'network_areas: {0}, {1}'.format(k, v)
 
 # Make sure the Inbound directory is valid
 assert os.path.isdir(inbound_folder)
@@ -49,13 +116,11 @@ assert os.path.isdir(inbound_folder)
 # Check the Packet Folder.
 assert os.path.isdir(unpack_folder)
 
-# Check Node address is setup
-assert (node_address != '')
 
-# Make sure we have a network name
-assert (network != '')
+# Handle count of Areas Processed
+area_count = collections.defaultdict(int)
 
-
+# Fido Packet 2 Structure
 _struct_packet_header_fields = [
     # Structure Size 58
     ('H', 'origin_node'),
@@ -94,7 +159,7 @@ FidonetPacketHeader = collections.namedtuple(
 
 
 class FlagBits(LittleEndianStructure):
-    # Captures the 1st Set of Bit Flags in the Message Header
+    # Captures the 1st Byte Set of Bit Flags in the Message Header
     _fields_ = [
         ('private',      c_uint8, 1),  # asByte & 1
         ('crash',        c_uint8, 1),  # asByte & 2
@@ -112,7 +177,7 @@ class FlagBits(LittleEndianStructure):
 
 
 class FlagBits2(LittleEndianStructure):
-    # Captures the 2nd Set of Bit Flags in the Message Header
+    # Captures the 2nd Byte Set of Bit Flags in the Message Header
     _fields_ = [
         ('local',        c_uint8, 1),  # asByte & 256
         ('hold',         c_uint8, 1),  # asByte & 512
@@ -171,7 +236,7 @@ class SetFlags():
         # Test Print out Second 8 Bits
         # print attributes2.bit.get_dict()
 
-
+# Fido Message Header Structure
 _struct_message_header_fields = [
     # Structure Size 14
     ('H', 'message_type'),
@@ -205,6 +270,7 @@ def read_cstring(file_object, offset):
             break
 
         new_string += str(byte)
+
     return new_string
 
 
@@ -220,8 +286,6 @@ def read_message_text(file_object, offset):
 
         message_string += chunk
     return message_string
-
-area_count = collections.defaultdict(int)
 
 
 def track_area(area):
@@ -244,13 +308,43 @@ def print_area_count():
             area, area_count[area])
         total_messages += area_count[area]
         total_areas += 1
-        
+
     # hard coded for now, this will be setup with dupe checking
     total_messages_imported = total_messages
 
     print ''
     print 'Areas: {0} -> Messages: {1} -> Imported -> {2}.'.format(
         total_areas, total_messages, total_messages_imported)
+
+
+def get_msg_last_read(area=None):
+    # return last read pointer for current area.
+    from x84.bbs import DBProxy
+    db_index = DBProxy(INDEXDB)
+    if area:
+        return db_index.get(area, set())
+    # flatten list of [set(1, 2), set(3, 4)] to set(1, 2, 3, 4)
+    return set([_idx for indices in db_index.values() for _idx in indices])
+
+
+class MsgIndex(object):
+    # Holds the Exported Message Index of new messages
+    # for outbound mail packets.
+    def __init__(self, area_name, msg_last_read):
+        self.area = area_name
+        self.pointer = msg_last_read
+        self.index = None
+
+    def set_index(self):
+        # persist message index record to database
+        from x84.bbs import DBProxy
+        new = self.index is None
+
+        with DBProxy(INDEXDB, use_session=False) as db_index:
+            if new:
+                self.index = max(map(int, db_index.keys()) or [-1]) + 1
+                new = True
+            db_index['%d' % (self.index,)] = self
 
 
 class Message(object):
@@ -278,9 +372,9 @@ class Message(object):
         #self.parse_lines()
 
     def import_messages(self):
+        from x84.bbs.msgbase import Msg
         # hook into x84 and write message to default database and
         # keep separate database for fido specific fields.
-        from x84.bbs import Msg, DBProxy
 
         #'author': msg.author,
         #'subject': msg.subject,
@@ -302,13 +396,13 @@ class Message(object):
 
         # If area is a normal public echo
         store_msg.tags.add(u''.join('public'))
-        store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie agora-net
+        store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie Agoranet
         store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
 
         # if area is not a public echo, add to sysop group tag
-        #store_msg.tags.add(u''.join('sysop'))
-        #store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie agora-net
-        #store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
+        # store_msg.tags.add(u''.join('sysop'))
+        # store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie Agoranet
+        # store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
 
         # store_msg.tags.add(u''.join((net['name'])))
 
@@ -318,8 +412,10 @@ class Message(object):
         date_object = datetime.datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
 
         print date_object
+
         # do not save this message to network, we already received
         # it from the network, set send_net=False
+        # Also avoid sending over X84 NET
         store_msg.save(send_net=False, ctime=date_object)
 
     def add_kludge(self, line):
@@ -374,6 +470,7 @@ class Message(object):
                     message_body.append(line)
                     stage = 2
 
+                # not official, just preference to remove this invalid data record.
                 elif line.startswith('\x1ASAUCE00'):
                     # skip bad characters or records in messages
                     continue
@@ -445,6 +542,22 @@ class ParsePackets(object):
             print_area_count()
 
 
+def flatten(dictionary):
+    for key, value in dictionary.iteritems():
+        if isinstance(value, dict):
+            # recurse
+            for res in flatten(value):
+                yield res
+        else:
+            yield key, value
+
+
+def get_key_from_dict_value(dictionary, value_to_find):
+    for key, value in flatten(dictionary):
+        if value == value_to_find:
+            return key
+
+
 def process_inbound():
     # Process all packets waiting in the inbound_folder
     """
@@ -453,6 +566,7 @@ def process_inbound():
     """
     print inbound_folder
     message_count = 0
+    found_pk_address = False
 
     for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
         # Uncompress packet bundles, then loop to read packet/message headers/messages
@@ -511,11 +625,16 @@ def process_inbound():
                         fido_header.destination_zone, fido_header.destination_network,
                         fido_header.destination_node)
 
-                # print 'Node: [%r], Packet: [%r]' % (node_address, packet_address)
-                if node_address != packet_address:
-                    print u'Error: packet not addressed to your node: [{0}], ' \
-                          u'destination: [{1}]'.format(
-                        node_address, packet_address)
+                # Verify the packet is for one of our node addresses
+                found_pk_address = False
+                for val in node_address.itervalues():
+                    if packet_address in ''.join(val):
+                        print 'found packet address!'
+                        found_pk_address = True
+
+                if not found_pk_address:
+                    print u'Error: packet not addressed to your node: {0}, ' \
+                          u'destination: {1}'.format(node_address, packet_address)
                     break
 
                 assert isinstance(fido_header, object)
@@ -596,7 +715,7 @@ def process_inbound():
                     current_message.user_from = username_from
                     current_message.subject = subject_string
                     current_message.raw_data = message_string
-                    
+
                     # Packet Headers will check for source / destination address
                     # mainly dupe checking
                     current_message.packet_header = fido_header
@@ -661,8 +780,9 @@ def main(background_daemon=False):
         TossMessages()
 
 if __name__ == '__main__':
-    import x84.bbs.ini
-    x84.bbs.ini.init(*cmdline.parse_args())
+    # x84 init for CFG w/ x84.cmdline
+    # Keep this in main program so we can read get_ini properly!
+    # init(*parse_args())
 
     # do not execute message polling as a background thread.
     main(background_daemon=False)
