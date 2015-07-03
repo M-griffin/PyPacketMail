@@ -8,7 +8,7 @@
     Reading and Writing mail packets.
 
     *** Sample INI Section to be added to DEFAULT.INI in X84
-    
+
     # Setup for PyPacket Mail {Fidonet Tosser/Scanner}
     [mailpacket]
     inbound = /home/pi/Desktop/PyPacketMail/inbound
@@ -17,24 +17,24 @@
     unpack = /home/pi/Desktop/PyPacketMail/unpack
     bad = /home/pi/Desktop/PyPacketMail/bad
     archive = /home/pi/Desktop/PyPacketMail/archive
-    
+
     # Fido Type Network Domain names, seperate with commas.
     [fido_networks]
     network_tags = agoranet, fidonet
-    
+
     # Network Specific Addresses and Area -> Tag Translations.
     [agoranet]
     node_address = 46:1/140
     export_address = 46:1/100
-    areas = agn_gen: general, agn_ads: bbs_ads, agn_bbs: bbs_discussion, agn_art: art, agn_dev: development, 
+    areas = agn_gen: general, agn_ads: bbs_ads, agn_bbs: bbs_discussion, agn_art: art, agn_dev: development,
             agn_nix: unix_linux, agn_hub: hub_stats, agn_l46: league46, agn_tst: testing, agn_sys: sysop_area
-    
+
     # Network Specific Addresses and Area -> Tag Translations.
     [fidonet]
     node_address = 1:154/140
     export_address = 1:154/10
     areas = fdn_ent: enthral_bbs
-    
+
 """
 
 __author__ = "Michael Griffin"
@@ -63,6 +63,7 @@ from x84.cmdline import parse_args
 init(*parse_args())
 
 # Database to hold last Exported Message Indexes
+# WIP, looking at alternatives
 INDEXDB = 'pymail_index'
 
 # Working Folders pull from .x84 Default INI
@@ -72,8 +73,10 @@ unpack_folder = ''.join(get_ini(section='mailpacket', key='unpack', split=True))
 # Test reading and parsing network and area groupings.  We want to match
 # eg. Agoranet, then all associate areas.
 
-print 'inbound_folder: {0}'.format(inbound_folder)
-print 'unpack_folder: {0}'.format(unpack_folder)
+# could set this all up as a class instead!
+
+print 'inbound_folder: {name}'.format(name=inbound_folder)
+print 'unpack_folder : {name}'.format(name=unpack_folder)
 
 # Arrays to Hold Network and Export Addresses
 node_address = {}     # Your Address
@@ -90,7 +93,7 @@ for network in network_list:
 
 # Make sure we loaded the dict properly.
 for k, v in node_address.items():
-    print 'node_address: {0}, {1}'.format(k, v)
+    print 'node_address: {key}, {value}'.format(key=k, value=v)
 
 # Test reading List of Networks
 for network in network_list:
@@ -99,7 +102,7 @@ for network in network_list:
 
 # Make sure we loaded the dict properly.
 for k, v in export_address.items():
-    print 'export_address: {0}, {1}'.format(k, v)
+    print 'export_address: {key}, {value}'.format(key=k, value=v)
 
 # Test reading List of Message Areas per Network
 for network in network_list:
@@ -108,7 +111,7 @@ for network in network_list:
 
 # Make sure we loaded the dict properly.
 for k, v in network_areas.items():
-    print 'network_areas: {0}, {1}'.format(k, v)
+    print 'network_areas: {key}, {value}'.format(key=k, value=v)
 
 # Make sure the Inbound directory is valid
 assert os.path.isdir(inbound_folder)
@@ -541,8 +544,8 @@ class ParsePackets(object):
             process_inbound()
             print_area_count()
 
-
 def flatten(dictionary):
+    # not in use, testing.
     for key, value in dictionary.iteritems():
         if isinstance(value, dict):
             # recurse
@@ -553,6 +556,7 @@ def flatten(dictionary):
 
 
 def get_key_from_dict_value(dictionary, value_to_find):
+    # Not in use. wasn't working
     for key, value in flatten(dictionary):
         if value == value_to_find:
             return key
@@ -627,11 +631,12 @@ def process_inbound():
 
                 # Verify the packet is for one of our node addresses
                 found_pk_address = False
-                for val in node_address.itervalues():
+                for key, val in node_address.items():
                     if packet_address in ''.join(val):
-                        print 'found packet address!'
+                        print 'Reading Packet for: {network}'.format(network=key)
                         found_pk_address = True
 
+                # If Address is not in our network, skip to next packet.
                 if not found_pk_address:
                     print u'Error: packet not addressed to your node: {0}, ' \
                           u'destination: {1}'.format(node_address, packet_address)
