@@ -59,6 +59,9 @@ from ctypes import LittleEndianStructure, Union, c_uint8
 from x84.bbs.ini import init, get_ini
 from x84.cmdline import parse_args
 
+# WIP
+INDEXDB = 'pymail_index'
+
 # Read in default .x84 INI File.
 init(*parse_args())
 
@@ -66,7 +69,7 @@ init(*parse_args())
 class FidonetConfiguration():
     # Holds configuration values from x84 Default.ini
     # also builds up lists of areas per network and
-    # their aata -> tag translatons
+    # their data -> tag translatons
     def __init__(self):
         self.__network_list = []     # List of Fido Networks
         self.__node_address = {}     # Your Address
@@ -84,7 +87,6 @@ class FidonetConfiguration():
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
-                # hard code here for testing.
                 self.__node_address[net] = \
                     get_ini(section=net, key='node_address', split=True)
 
@@ -92,7 +94,6 @@ class FidonetConfiguration():
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
-                # hard code here for testing.
                 self.__export_address[net] = \
                     get_ini(section=net, key='export_address', split=True)
 
@@ -100,7 +101,6 @@ class FidonetConfiguration():
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
-                # hard code here for testing.
                 self.__network_areas[net] = \
                     get_ini(section=net, key='areas', split=True)
 
