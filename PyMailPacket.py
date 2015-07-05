@@ -39,7 +39,7 @@
 
 __author__ = "Michael Griffin"
 __copyright__ = "Copyright 2015"
-__credits__ = ["Jeff Quast"]
+__credits__ = "Jeff Quast"
 __license__ = "MIT"
 __version__ = "1.0.0"
 __status__ = "Prototype"
@@ -62,62 +62,118 @@ from x84.cmdline import parse_args
 # Read in default .x84 INI File.
 init(*parse_args())
 
-# Database to hold last Exported Message Indexes
-# WIP, looking at alternatives
-INDEXDB = 'pymail_index'
 
-# Working Folders pull from .x84 Default INI
-inbound_folder = ''.join(get_ini(section='mailpacket', key='inbound', split=True))
-unpack_folder = ''.join(get_ini(section='mailpacket', key='unpack', split=True))
+class FidonetConfiguration():
+    # Holds configuration values from x84 Default.ini
+    # also builds up lists of areas per network and
+    # their aata -> tag translatons
+    def __init__(self):
+        self.__network_list = []     # List of Fido Networks
+        self.__node_address = {}     # Your Address
+        self.__export_address = {}   # Your Network Hub's Address
+        self.__network_areas = {}    # Message Areas by network
+        self.__inbound_folder = None
+        self.__unpack_folder = None
+        self.read_configuration()    # Load All INI settings on startup.
 
-# Test reading and parsing network and area groupings.  We want to match
-# eg. Agoranet, then all associate areas.
+    def add_network(self):
+        self.__network_list = \
+            get_ini(section='fido_networks', key='network_tags', split=True)
 
-# could set this all up as a class instead!
+    def add_node_address(self):
+        if self.is_network_empty is False:
+            for net in self.__network_list:
+                # Loop network list and get network section.
+                # hard code here for testing.
+                self.__node_address[net] = \
+                    get_ini(section=net, key='node_address', split=True)
 
-print 'inbound_folder: {name}'.format(name=inbound_folder)
-print 'unpack_folder : {name}'.format(name=unpack_folder)
+    def add_export_address(self):
+        if self.is_network_empty is False:
+            for net in self.__network_list:
+                # Loop network list and get network section.
+                # hard code here for testing.
+                self.__export_address[net] = \
+                    get_ini(section=net, key='export_address', split=True)
 
-# Arrays to Hold Network and Export Addresses
-node_address = {}     # Your Address
-export_address = {}   # Your Network Hub's Address
-network_areas = {}    # Message Areas by network
+    def add_network_areas(self):
+        if self.is_network_empty is False:
+            for net in self.__network_list:
+                # Loop network list and get network section.
+                # hard code here for testing.
+                self.__network_areas[net] = \
+                    get_ini(section=net, key='areas', split=True)
 
-network_list = get_ini(section='fido_networks', key='network_tags', split=True)
-print 'network_list: ' + ' '.join(network_list)
+    @property
+    def is_network_empty(self):
+        if bool(self.__network_list and True):
+            return False
+        return True
 
-# Test reading List of Networks
-for network in network_list:
-    # Loop network list and get network section. hard code here for testing.
-    node_address[network] = get_ini(section=network, key='node_address', split=True)
+    @property
+    def inbound_folder(self):
+        return self.__inbound_folder
 
-# Make sure we loaded the dict properly.
-for k, v in node_address.items():
-    print 'node_address: {key}, {value}'.format(key=k, value=v)
+    @property
+    def unpack_folder(self):
+        return self.__unpack_folder
 
-# Test reading List of Networks
-for network in network_list:
-    # Loop network list and get network section. hard code here for testing.
-    export_address[network] = get_ini(section=network, key='export_address', split=True)
+    def check_network_address(self, address):
+        for key, val in self.__node_address.items():
+            if address in ''.join(val):
+                return '{network}'.format(network=key)
+        return None
 
-# Make sure we loaded the dict properly.
-for k, v in export_address.items():
-    print 'export_address: {key}, {value}'.format(key=k, value=v)
+    def get_tag(self, network_name, network_area):
+        if self.is_network_empty is False:
+            for area in self.__network_areas[network_name]:
+                k, v = area.split(': ')
 
-# Test reading List of Message Areas per Network
-for network in network_list:
-    # Loop network list and get network section. hard code here for testing.
-    network_areas[network] = get_ini(section=network, key='areas', split=True)
+                #print 'key {key} val {val}'.format(key=k, val=v)
+                if network_area in k:
+                    return v
+        return None
 
-# Make sure we loaded the dict properly.
-for k, v in network_areas.items():
-    print 'network_areas: {key}, {value}'.format(key=k, value=v)
+    def read_configuration(self):
+        # Working Folders pull from .x84 Default INI
+        self.__inbound_folder = ''.join(get_ini(section='mailpacket', key='inbound', split=True))
+        self.__unpack_folder = ''.join(get_ini(section='mailpacket', key='unpack', split=True))
+
+        # read .x84 default.ini file for network info
+        self.add_network()
+        print 'network_list: ' + ', '.join(str(x) for x in self.__network_list)
+
+        self.add_node_address()
+        for key, val in self.__node_address.items():
+            print 'node_address: {key}, {value}'.format(key=key, value=val)
+
+        self.add_export_address()
+        for key, val in self.__export_address.items():
+            print 'export_address: {key}, {value}'.format(key=key, value=val)
+
+        self.add_network_areas()
+        for key, val in self.__network_areas.items():
+            print 'network_areas: {key}, {value}'.format(key=key, value=val)
+
+print ''
+
+# Parse and Setup Fido-net addresses and areas
+cfg = FidonetConfiguration()
+
+print ''
+print 'is network empty: {bool}'.format(bool=cfg.is_network_empty)
+print 'inbound_folder: {name}'.format(name=cfg.inbound_folder)
+print 'unpack_folder : {name}'.format(name=cfg.unpack_folder)
+print ''
+
+# Make sure we have at least one network setup
+assert cfg.is_network_empty is False
 
 # Make sure the Inbound directory is valid
-assert os.path.isdir(inbound_folder)
+assert os.path.isdir(cfg.inbound_folder)
 
 # Check the Packet Folder.
-assert os.path.isdir(unpack_folder)
+assert os.path.isdir(cfg.unpack_folder)
 
 
 # Handle count of Areas Processed
@@ -369,8 +425,11 @@ class Message(object):
         self.raw_data = None
         self.message_header = None
         self.packet_header = None
+        self.packet_address = None
+        self.network = None
         # Clean Message Text, Split with CR, remove any LF!
         self.message_lines = None
+
         # Initial method when we enter the class.
         #self.parse_lines()
 
@@ -397,10 +456,19 @@ class Message(object):
         # Convert from CP437 for high ascii, later on read CHRS kludge for origin character set
         store_msg.body = unicode('\r'.join(self.message_lines).replace('\x9d', ''), 'CP437')
 
-        # If area is a normal public echo
+        # If area is a normal public echo, default is public
         store_msg.tags.add(u''.join('public'))
-        store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie Agoranet
-        store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
+
+        # Change to Network Name ie Agoranet
+        store_msg.tags.add(u''.join(self.network))
+
+        # Translate the area to the tag description.
+        # eg.. AGN_GEN -> general
+        area_tag = cfg.get_tag(self.network, self.area)
+
+        print 'Area Tag: ' + area_tag
+        if area_tag is not None:
+            store_msg.tags.add(u''.join(area_tag))
 
         # if area is not a public echo, add to sysop group tag
         # store_msg.tags.add(u''.join('sysop'))
@@ -420,6 +488,7 @@ class Message(object):
         # it from the network, set send_net=False
         # Also avoid sending over X84 NET
         store_msg.save(send_net=False, ctime=date_object)
+        del store_msg
 
     def add_kludge(self, line):
         # Separates Kludge Lines into An Array of Fields
@@ -568,26 +637,23 @@ def process_inbound():
 
     :rtype : none
     """
-    print inbound_folder
     message_count = 0
-    found_pk_address = False
 
-    for file_path_zip in glob.glob(os.path.join(inbound_folder, u'*.*')):
+    for file_path_zip in glob.glob(os.path.join(cfg.inbound_folder, u'*.*')):
         # Uncompress packet bundles, then loop to read packet/message headers/messages
         try:
-
             # unzip a clean bundle
             with zipfile.ZipFile(file_path_zip) as zip_obj:
                 print u'Uncompress Bundle: ' + os.path.basename(file_path_zip)
-                zip_obj.extractall(unpack_folder)
+                zip_obj.extractall(cfg.unpack_folder)
 
             # Loop and process all packets
-            for file_name in os.listdir(unpack_folder):
+            for file_name in os.listdir(cfg.unpack_folder):
                 # Parse Each Packet for the Header first.
                 print u'Parsing Mail Packet: ' + file_name
 
                 # Open then Parse Each Packet
-                fido_object = open(os.path.join(unpack_folder, file_name), 'rb')
+                fido_object = open(os.path.join(cfg.unpack_folder, file_name), 'rb')
 
                 try:
                     # make Sure we don't read past the end of the file!
@@ -613,34 +679,31 @@ def process_inbound():
 
                 # Test the packet header
                 if fido_header.packet_type != 2:
-                    print u'Error: packet not Type-2: ' + file_name
+                    print u'Error: fido packet not Type-2: ' + file_name
                     break
 
                 # Validate packet is addressed to this system
                 # Add 5D addresses? have @domain like @agoranet
                 if fido_header.destination_point != 0:
                     # 4D address
-                    packet_address = '{0}:{1}/{2}.{3}'.format(
-                        fido_header.destination_zone, fido_header.destination_network,
-                        fido_header.destination_node, fido_header.destination_point)
+                    packet_address = '{zone}:{net}/{node}.{point}'.format(
+                        zone=fido_header.destination_zone, net=fido_header.destination_network,
+                        node=fido_header.destination_node, point=fido_header.destination_point)
                 else:
                     # 3D Address no point.
-                    packet_address = '{0}:{1}/{2}'.format(
-                        fido_header.destination_zone, fido_header.destination_network,
-                        fido_header.destination_node)
-
-                # Verify the packet is for one of our node addresses
-                found_pk_address = False
-                for key, val in node_address.items():
-                    if packet_address in ''.join(val):
-                        print 'Reading Packet for: {network}'.format(network=key)
-                        found_pk_address = True
+                    packet_address = '{zone}:{net}/{node}'.format(
+                        zone=fido_header.destination_zone, net=fido_header.destination_network,
+                        node=fido_header.destination_node)
 
                 # If Address is not in our network, skip to next packet.
-                if not found_pk_address:
-                    print u'Error: packet not addressed to your node: {0}, ' \
-                          u'destination: {1}'.format(node_address, packet_address)
+                current_network = cfg.check_network_address(packet_address)
+                if current_network is None:
+                    print u'Error: packet not addressed to your node: {packet}, '\
+                        .format(packet=packet_address)
                     break
+
+                print u'Packet Received for: {network} -> {packet}'\
+                    .format(network=current_network, packet=packet_address)
 
                 assert isinstance(fido_header, object)
                 # print fido_header
@@ -727,16 +790,14 @@ def process_inbound():
                     # Message Headers will be checked for Import/Export flags etc.
                     current_message.message_header = fido_message_header
 
+                    # Populated the Current Network and Address.
+                    current_message.network = current_network
+                    current_message.packet_address = packet_address
+
                     # First Parse the Raw Data into Message Lines and
                     # break out Kludge lines from text
                     # if No errors then Import Message to x84
                     current_message.parse_lines()
-
-
-                    # Replaced with Message Object
-                    # Message(message_string, date_time_string,
-                    #        username_to, username_from, subject_string,
-                    #        fido_message_header, fido_header)
                     message_count += 1
 
                 # Cleanup for next run
@@ -749,7 +810,7 @@ def process_inbound():
             print ''
 
             # Clear out any packets before running next bundle
-            clear_files = glob.glob(os.path.join(unpack_folder, u'*.*'))
+            clear_files = glob.glob(os.path.join(cfg.unpack_folder, u'*.*'))
             for f in clear_files:
                 os.remove(f)
 
