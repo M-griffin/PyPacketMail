@@ -80,10 +80,12 @@ class FidonetConfiguration():
         self.read_configuration()    # Load All INI settings on startup.
 
     def add_network(self):
+        # Everything is built from the initial network address
         self.__network_list = \
             get_ini(section='fido_networks', key='network_tags', split=True)
 
     def add_node_address(self):
+        # Node Addresses per network
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
@@ -91,6 +93,7 @@ class FidonetConfiguration():
                     get_ini(section=net, key='node_address', split=True)
 
     def add_export_address(self):
+        # Export {mail hub} addresses per network
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
@@ -98,6 +101,7 @@ class FidonetConfiguration():
                     get_ini(section=net, key='export_address', split=True)
 
     def add_network_areas(self):
+        # key value area to tag translations per network
         if self.is_network_empty is False:
             for net in self.__network_list:
                 # Loop network list and get network section.
@@ -119,17 +123,18 @@ class FidonetConfiguration():
         return self.__unpack_folder
 
     def check_network_address(self, address):
+        # verify node address, return network name
         for key, val in self.__node_address.items():
             if address in ''.join(val):
                 return '{network}'.format(network=key)
         return None
 
     def get_tag(self, network_name, network_area):
+        # transpose area to tag name
+        # seperate string value into k, v dist.
         if self.is_network_empty is False:
             for area in self.__network_areas[network_name]:
                 k, v = area.split(': ')
-
-                #print 'key {key} val {val}'.format(key=k, val=v)
                 if network_area in k:
                     return v
         return None
@@ -140,6 +145,7 @@ class FidonetConfiguration():
         self.__unpack_folder = ''.join(get_ini(section='mailpacket', key='unpack', split=True))
 
         # read .x84 default.ini file for network info
+        # build dicts for all networks and their associations
         self.add_network()
         print 'network_list: ' + ', '.join(str(x) for x in self.__network_list)
 
@@ -174,7 +180,6 @@ assert os.path.isdir(cfg.inbound_folder)
 
 # Check the Packet Folder.
 assert os.path.isdir(cfg.unpack_folder)
-
 
 # Handle count of Areas Processed
 area_count = collections.defaultdict(int)
@@ -213,6 +218,7 @@ _struct_packet_header_fields = [
 
 _struct_fidonet_packet = '<{0}'.format(
     ''.join(struct_val for struct_val, _ in _struct_packet_header_fields))
+
 FidonetPacketHeader = collections.namedtuple(
     'FidonetPacketHeader', [field_name for _, field_name in _struct_packet_header_fields])
 
@@ -309,6 +315,7 @@ _struct_message_header_fields = [
 ]
 _struct_fidonet_message_header = '<{0}'.format(
     ''.join(struct_val for struct_val, _ in _struct_message_header_fields))
+
 FidonetMessageHeader = collections.namedtuple(
     'FidonetMessageHeader', [field_name for _, field_name in _struct_message_header_fields])
 
@@ -438,13 +445,13 @@ class Message(object):
         # hook into x84 and write message to default database and
         # keep separate database for fido specific fields.
 
-        #'author': msg.author,
-        #'subject': msg.subject,
-        #'recipient': msg.recipient,
-        #'parent': parent,
-        #'tags': [tag for tag in msg.tags if tag != network['name']],
-        #'body': u''.join((msg.body, format_origin_line())),
-        #'ctime': to_utctime(msg.ctime)
+        # 'author': msg.author,
+        # 'subject': msg.subject,
+        # 'recipient': msg.recipient,
+        # 'parent': parent,
+        # 'tags': [tag for tag in msg.tags if tag != network['name']],
+        # 'body': u''.join((msg.body, format_origin_line())),
+        # 'ctime': to_utctime(msg.ctime)
 
         store_msg = Msg()
         store_msg.recipient = unicode(self.user_to, 'CP437')
@@ -470,12 +477,9 @@ class Message(object):
         if area_tag is not None:
             store_msg.tags.add(u''.join(area_tag))
 
+        # In testing
         # if area is not a public echo, add to sysop group tag
         # store_msg.tags.add(u''.join('sysop'))
-        # store_msg.tags.add(u''.join('echomail'))  # Change to Network Name ie Agoranet
-        # store_msg.tags.add(u''.join(self.area))   # Change to Translation from INI AGN_BBS = bbs-ads etc..
-
-        # store_msg.tags.add(u''.join((net['name'])))
 
         # Convert Packet String to Date Time format.
         # We should also get and check UTZ kludge line!  Lateron for offset / Timezone.
@@ -612,23 +616,6 @@ class ParsePackets(object):
         if _packet_processing in 'read':
             process_inbound()
             print_area_count()
-
-def flatten(dictionary):
-    # not in use, testing.
-    for key, value in dictionary.iteritems():
-        if isinstance(value, dict):
-            # recurse
-            for res in flatten(value):
-                yield res
-        else:
-            yield key, value
-
-
-def get_key_from_dict_value(dictionary, value_to_find):
-    # Not in use. wasn't working
-    for key, value in flatten(dictionary):
-        if value == value_to_find:
-            return key
 
 
 def process_inbound():
