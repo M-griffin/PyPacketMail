@@ -59,8 +59,8 @@ from ctypes import LittleEndianStructure, Union, c_uint8
 from x84.bbs.ini import init, get_ini
 from x84.cmdline import parse_args
 
-# WIP
-INDEXDB = 'pymail_index'
+# Database for holding FidoNet Specific Items and Kludges
+FIDO_DB = 'pymail'
 
 # Read in default .x84 INI File.
 init(*parse_args())
@@ -382,38 +382,40 @@ def print_area_count():
     print 'Areas: {0} -> Messages: {1} -> Imported -> {2}.'.format(
         total_areas, total_messages, total_messages_imported)
 
+            
+class StoredFidoInfo(object):
+    # Holds Fido Specific Message and Kludge Data That 
+    # is Absent from the standard message layout
+    def __init__(self, index):
+        self.idx = index
+        self.__status = None
+        self.__date_processed = None
+        self.__kludge = set()
 
-def get_msg_last_read(area=None):
-    # return last read pointer for current area.
-    from x84.bbs import DBProxy
-    db_index = DBProxy(INDEXDB)
-    if area:
-        return db_index.get(area, set())
-    # flatten list of [set(1, 2), set(3, 4)] to set(1, 2, 3, 4)
-    return set([_idx for indices in db_index.values() for _idx in indices])
+    @property
+    def status(self, flag):
+        self.__status = flag
+                
+    @property
+    def kludge_lines(self, k_lines):
+        assert isinstance(k_lines, object)
+        self.__kludge = k_lines
 
-
-class MsgIndex(object):
-    # Holds the Exported Message Index of new messages
-    # for outbound mail packets.
-    def __init__(self, area_name, msg_last_read):
-        self.area = area_name
-        self.pointer = msg_last_read
-        self.index = None
-
-    def set_index(self):
+    def save(self):
         # persist message index record to database
         from x84.bbs import DBProxy
-        new = self.index is None
+        new = self.idx is None
 
-        with DBProxy(INDEXDB, use_session=False) as db_index:
+        with DBProxy(FIDO_DB, use_session=False) as db_index:
+            # Not Used, Messages are saved first, with Fido
+            # Data save with matching index.
             if new:
-                self.index = max(map(int, db_index.keys()) or [-1]) + 1
-                new = True
-            db_index['%d' % (self.index,)] = self
-
+                self.idx = max(map(int, db_index.keys()) or [-1]) + 1
+            db_index['%d' % (self.idx,)] = self            
+   
 
 class Message(object):
+    
     # Message Object that will be pasted into.
     def __init__(self):
         """
@@ -436,9 +438,6 @@ class Message(object):
         self.network = None
         # Clean Message Text, Split with CR, remove any LF!
         self.message_lines = None
-
-        # Initial method when we enter the class.
-        #self.parse_lines()
 
     def import_messages(self):
         from x84.bbs.msgbase import Msg
@@ -486,12 +485,16 @@ class Message(object):
         # 26 Feb 15  18:04:00
         date_object = datetime.datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
 
-        print date_object
+        # print date_object
+        print 'Msg Index before save: {0}'.format(store_msg.idx)
 
         # do not save this message to network, we already received
         # it from the network, set send_net=False
         # Also avoid sending over X84 NET
         store_msg.save(send_net=False, ctime=date_object)
+
+        # get message index
+        print 'Msg Index after save: {0}'.format(store_msg.idx)
         del store_msg
 
     def add_kludge(self, line):
@@ -609,7 +612,6 @@ class ParsePackets(object):
     def __init__(self, packet_processing):
         # Inbound or Outbound processing.
         """
-
         :type packet_processing: str
         """
         _packet_processing = packet_processing
@@ -621,7 +623,6 @@ class ParsePackets(object):
 def process_inbound():
     # Process all packets waiting in the inbound_folder
     """
-
     :rtype : none
     """
     message_count = 0
@@ -807,10 +808,8 @@ class TossMessages(ParsePackets):
     def __init__(self):
         # Inbound or Outbound processing.
         """
-
         :rtype : none
         """
-
         _packet_processing = 'read'
         super(TossMessages, self).__init__(_packet_processing)
 
@@ -820,7 +819,6 @@ class ScanMessages(ParsePackets):
     def __init__(self):
         # Inbound or Outbound processing.
         """
-
         :rtype : none
         """
         _packet_processing = 'write'
@@ -831,11 +829,8 @@ def main(background_daemon=False):
     # Scan for Incoming Message and Import them
     if not background_daemon:
         TossMessages()
+        # ScanMessages()
 
 if __name__ == '__main__':
-    # x84 init for CFG w/ x84.cmdline
-    # Keep this in main program so we can read get_ini properly!
-    # init(*parse_args())
-
     # do not execute message polling as a background thread.
     main(background_daemon=False)
