@@ -1,39 +1,49 @@
 #!/usr/bin/env python2.7
-""" PyMailPacket for x/84, http://github.com/jquast/x84
-    (c) 2015 Michael Griffin <mrmisticismo@hotmail.com>
-    http://github.com/m-griffin/PyMailPacket
+"""
+PyPacketMail for x/84, http://github.com/jquast/x84
+(c) 2015 Michael Griffin <mrmisticismo@hotmail.com>
+http://github.com/m-griffin/PyMailPacket
 
-    This is a FidoNet Echomail Scanner / Tosser for x84 bbs.
-    This will mimic the basic functionality of Crashmail for
-    Reading and Writing mail packets.
+This is a FidoNet Echomail Scanner / Tosser for x84 bbs.
+This will mimic the basic functionality of Crashmail for
+Reading and Writing mail packets.
 
-    *** Sample INI Section to be added to DEFAULT.INI in X84
+*** Sample INI Section to be added to DEFAULT.INI in X84
 
-    # Setup for PyPacket Mail {Fidonet Tosser/Scanner}
-    [mailpacket]
-    inbound = /home/pi/Desktop/PyPacketMail/inbound
-    outbound = /home/pi/Desktop/PyPacketMail/outbound
-    pack = /home/pi/Desktop/PyPacketMail/pack
-    unpack = /home/pi/Desktop/PyPacketMail/unpack
-    bad = /home/pi/Desktop/PyPacketMail/bad
-    archive = /home/pi/Desktop/PyPacketMail/archive
+# Setup for PyPacket Mail {Fidonet Tosser/Scanner}
+[mailpacket]
+inbound = /home/pi/Desktop/PyPacketMail/inbound
+outbound = /home/pi/Desktop/PyPacketMail/outbound
+pack = /home/pi/Desktop/PyPacketMail/pack
+unpack = /home/pi/Desktop/PyPacketMail/unpack
+bad = /home/pi/Desktop/PyPacketMail/bad
+archive = /home/pi/Desktop/PyPacketMail/archive
 
-    # Fido Type Network Domain names, seperate with commas.
-    [fido_networks]
-    network_tags = agoranet, fidonet
+# Fido Type Network Domain names, seperate with commas.
+[fido_networks]
+network_tags = agoranet, fidonet
 
-    # Network Specific Addresses and Area -> Tag Translations.
-    [agoranet]
-    node_address = 46:1/140
-    export_address = 46:1/100
-    areas = agn_gen: general, agn_ads: bbs_ads, agn_bbs: bbs_discussion, agn_art: art, agn_dev: development,
-            agn_nix: unix_linux, agn_hub: hub_stats, agn_l46: league46, agn_tst: testing, agn_sys: sysop_area
+# Network Specific Addresses and Area -> Tag Translations.
+[agoranet]
+node_address = 46:1/140
+export_address = 46:1/100
+areas = agn_gen: general, agn_ads: bbs_ads, agn_bbs: bbs_discussion, agn_art: art, agn_dev: development,
+        agn_nix: unix_linux, agn_hub: hub_stats, agn_l46: league46, agn_tst: testing, agn_sys: sysop_area
+default_area = agn_gen
 
-    # Network Specific Addresses and Area -> Tag Translations.
-    [fidonet]
-    node_address = 1:154/140
-    export_address = 1:154/10
-    areas = fdn_ent: enthral_bbs
+# Network Specific Addresses and Area -> Tag Translations.
+[fidonet]
+node_address = 1:154/140
+export_address = 1:154/10
+areas = fdn_ent: enthral_bbs
+default_area = fdn_ent
+
+Recent changeLog
+
+* 0.0.1
+- Added Default Areas, of only a network tag is used eg. agoranet, and no
+  specific area tag is selected. the default_area will then be used for
+  exporting messages.
 
 """
 
@@ -75,6 +85,7 @@ class FidonetConfiguration():
         self.__node_address = {}     # Your Address
         self.__export_address = {}   # Your Network Hub's Address
         self.__network_areas = {}    # Message Areas by network
+        self.__default_areas = {}    # Default if no Valid Area Tag
         self.__inbound_folder = None
         self.__unpack_folder = None
         self.read_configuration()    # Load All INI settings on startup.
@@ -108,6 +119,14 @@ class FidonetConfiguration():
                 self.__network_areas[net] = \
                     get_ini(section=net, key='areas', split=True)
 
+    def add_default_areas(self):
+        # No Valid area, then use default area
+        if self.is_network_empty is False:
+            for net in self.__network_list:
+                # Loop network list and get network section.
+                self.__default_areas[net] = \
+                    get_ini(section=net, key='default_area', split=True)
+
     @property
     def is_network_empty(self):
         if bool(self.__network_list and True):
@@ -139,6 +158,14 @@ class FidonetConfiguration():
                     return v
         return None
 
+    def count_network_areas(self):
+        # Just gets a general count of network keys
+        # should have at least 1 network with a value area string.
+        count = 0
+        if self.is_network_empty is False:
+            count = len(self.__network_areas)
+        return count
+
     def read_configuration(self):
         # Working Folders pull from .x84 Default INI
         self.__inbound_folder = ''.join(get_ini(section='mailpacket', key='inbound', split=True))
@@ -161,6 +188,10 @@ class FidonetConfiguration():
         for key, val in self.__network_areas.items():
             print 'network_areas: {key}, {value}'.format(key=key, value=val)
 
+        self.add_default_areas()
+        for key, val in self.__default_areas.items():
+            print 'default_areas: {key}, {value}'.format(key=key, value=val)
+
 print ''
 
 # Parse and Setup Fido-net addresses and areas
@@ -168,12 +199,16 @@ cfg = FidonetConfiguration()
 
 print ''
 print 'is network empty: {bool}'.format(bool=cfg.is_network_empty)
+print 'num of network w/ areas: {count}'.format(count=cfg.count_network_areas())
 print 'inbound_folder: {name}'.format(name=cfg.inbound_folder)
 print 'unpack_folder : {name}'.format(name=cfg.unpack_folder)
 print ''
 
 # Make sure we have at least one network setup
 assert cfg.is_network_empty is False
+
+# Make sure we have at least one network area
+assert cfg.count_network_areas() >= 1
 
 # Make sure the Inbound directory is valid
 assert os.path.isdir(cfg.inbound_folder)
@@ -382,9 +417,9 @@ def print_area_count():
     print 'Areas: {0} -> Messages: {1} -> Imported -> {2}.'.format(
         total_areas, total_messages, total_messages_imported)
 
-            
+
 class StoredFidoInfo(object):
-    # Holds Fido Specific Message and Kludge Data That 
+    # Holds Fido Specific Message and Kludge Data That
     # is Absent from the standard message layout
     def __init__(self, index):
         self.idx = index
@@ -395,7 +430,7 @@ class StoredFidoInfo(object):
     @property
     def status(self, flag):
         self.__status = flag
-                
+
     @property
     def kludge_lines(self, k_lines):
         assert isinstance(k_lines, object)
@@ -411,11 +446,11 @@ class StoredFidoInfo(object):
             # Data save with matching index.
             if new:
                 self.idx = max(map(int, db_index.keys()) or [-1]) + 1
-            db_index['%d' % (self.idx,)] = self            
-   
+            db_index['%d' % (self.idx,)] = self
+
 
 class Message(object):
-    
+
     # Message Object that will be pasted into.
     def __init__(self):
         """
@@ -449,9 +484,7 @@ class Message(object):
         # 'recipient': msg.recipient,
         # 'parent': parent,
         # 'tags': [tag for tag in msg.tags if tag != network['name']],
-        # 'body': u''.join((msg.body, format_origin_line())),
         # 'ctime': to_utctime(msg.ctime)
-
         store_msg = Msg()
         store_msg.recipient = unicode(self.user_to, 'CP437')
         store_msg.author = unicode(self.user_from, 'CP437')
@@ -485,17 +518,14 @@ class Message(object):
         # 26 Feb 15  18:04:00
         date_object = datetime.datetime.strptime(self.date_time, '%d %b %y %H:%M:%S')
 
-        # print date_object
-        print 'Msg Index before save: {0}'.format(store_msg.idx)
-
         # do not save this message to network, we already received
         # it from the network, set send_net=False
         # Also avoid sending over X84 NET
         store_msg.save(send_net=False, ctime=date_object)
 
         # get message index
-        print 'Msg Index after save: {0}'.format(store_msg.idx)
-        del store_msg
+        # print 'Msg Index after save: {0}'.format(store_msg.idx)
+        # del store_msg
 
     def add_kludge(self, line):
         # Separates Kludge Lines into An Array of Fields
@@ -788,14 +818,18 @@ def process_inbound():
                     current_message.parse_lines()
                     message_count += 1
 
+                    # Cleanup
+                    # del current_message
+
                 # Cleanup for next run
                 fido_object.close()
                 print u'    Messages This Packet -> ' + str(message_count)
+                print '*' * 30
 
         finally:
             # Clear the unpack_folder here later on, leave for testing, just overwrites!
             print u'End of Bundle'
-            print ''
+            print '*' * 60
 
             # Clear out any packets before running next bundle
             clear_files = glob.glob(os.path.join(cfg.unpack_folder, u'*.*'))
@@ -813,7 +847,7 @@ class TossMessages(ParsePackets):
         _packet_processing = 'read'
         super(TossMessages, self).__init__(_packet_processing)
 
-        
+
 class ScanMessages(ParsePackets):
     # handle outgoing messages
     def __init__(self):
@@ -823,7 +857,7 @@ class ScanMessages(ParsePackets):
         """
         _packet_processing = 'write'
         super(ScanMessages, self).__init__(_packet_processing)
-        
+
 
 def main(background_daemon=False):
     # Scan for Incoming Message and Import them
