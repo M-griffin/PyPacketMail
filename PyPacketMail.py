@@ -371,7 +371,6 @@ def read_cstring(file_object, offset):
             break
 
         new_string += str(byte)
-
     return new_string
 
 
@@ -427,14 +426,20 @@ class StoredFidoInfo(object):
         self.__date_processed = None
         self.__kludge = set()
 
-    @property
     def status(self, flag):
         self.__status = flag
 
-    @property
     def kludge_lines(self, k_lines):
         assert isinstance(k_lines, object)
         self.__kludge = k_lines
+
+    @property
+    def check_status(self):
+        return self.__status
+
+    @property
+    def check_kludge(self):
+        return self.__kludge
 
     def save(self):
         # persist message index record to database
@@ -505,7 +510,7 @@ class Message(object):
         # eg.. AGN_GEN -> general
         area_tag = cfg.get_tag(self.network, self.area)
 
-        print 'Area Tag: ' + area_tag
+        # print 'Area Tag: ' + area_tag
         if area_tag is not None:
             store_msg.tags.add(u''.join(area_tag))
 
@@ -522,6 +527,16 @@ class Message(object):
         # it from the network, set send_net=False
         # Also avoid sending over X84 NET
         store_msg.save(send_net=False, ctime=date_object)
+
+        print 'Msg Index after save: {0}'.format(store_msg.idx)
+
+        # Setup and store the fido kludge data
+        fido_msg = StoredFidoInfo(store_msg.idx)
+        fido_msg.status('received')
+        fido_msg.kludge_lines(self.kludge_lines)
+        fido_msg.save()
+
+        print 'Fido Index after save: {0}'.format(fido_msg.idx)
 
         # get message index
         # print 'Msg Index after save: {0}'.format(store_msg.idx)
@@ -648,6 +663,30 @@ class ParsePackets(object):
         if _packet_processing in 'read':
             process_inbound()
             print_area_count()
+
+        elif _packet_processing in 'write':
+            process_outbound()
+
+
+def process_outbound():
+    # Scan for New Messages ready for sending out
+    """
+    :rtype : none
+    """
+    from x84.bbs import DBProxy
+
+    print 'process_outbound()'
+
+    # Status is a list of all Message Keys
+    status = set(int(key) for key in DBProxy(FIDO_DB).keys())
+    print status
+
+    # Scan message Status.
+    with DBProxy(FIDO_DB) as fido_db:
+        for key, values in fido_db.items():
+            print key, values.check_status
+
+    # Work out kludge lines now.
 
 
 def process_inbound():
@@ -862,8 +901,11 @@ class ScanMessages(ParsePackets):
 def main(background_daemon=False):
     # Scan for Incoming Message and Import them
     if not background_daemon:
-        TossMessages()
-        # ScanMessages()
+        # Import Message 80% Done.
+        # TossMessages()
+
+        # Export Messages WIP!
+        ScanMessages()
 
 if __name__ == '__main__':
     # do not execute message polling as a background thread.
