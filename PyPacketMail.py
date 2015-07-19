@@ -316,7 +316,6 @@ class SetFlags():
     def __init__(self, field, field2):
         # get flags from message header
         """
-
         :rtype : None
         """
         self.field = field
@@ -326,15 +325,8 @@ class SetFlags():
     def set_flags(self):
         attributes = Flags()
         attributes.in_value = self.field
-
         attributes2 = Flags2()
         attributes2.in_value = self.field2
-
-        # Test Print out first 8 Bits
-        # print attributes.bit.get_dict()
-
-        # Test Print out Second 8 Bits
-        # print attributes2.bit.get_dict()
 
 # Fido Message Header Structure
 _struct_message_header_fields = [
@@ -495,7 +487,7 @@ class Message(object):
         store_msg.author = unicode(self.user_from, 'CP437')
         store_msg.subject = unicode(self.subject, 'CP437')
 
-        # Add Check here for Private Netmail messages
+        # Add Check here for Private Netmail messages, this functionality will be added lateron
 
         # Convert from CP437 for high ascii, later on read CHRS kludge for origin character set
         store_msg.body = unicode('\r'.join(self.message_lines).replace('\x9d', ''), 'CP437')
@@ -637,10 +629,11 @@ class Message(object):
         if self.area:
             lines.append('AREA:%s' % self.area)
 
+        # Setup Kludge Lines
         for key, kludge_value in self.kludge_lines.items():
             for value in kludge_value:
                 # Check if these needs \r at end of line!!
-                lines.append('\x01%s %s' % (key, value))
+                lines.append('\x01{key} {val}'.format(key=key, val=value))
 
         lines.extend(self.message_lines)
 
@@ -684,9 +677,23 @@ def process_outbound():
     # Scan message Status.
     with DBProxy(FIDO_DB) as fido_db:
         for key, values in fido_db.items():
-            print key, values.check_status
+            # print key, values.check_status
+            # print key, values.check_kludge
+            for k, v in values.check_kludge.items():
+                # Grabs Key values of all Kludges
+                print k, v
 
     # Work out kludge lines now.
+    # Example modern msg id.
+    '''
+       TID: ['Mystic BBS 1.10', FastEcho, SBBSecho, MBSE-FIDO]
+       PID: ['SMBUTIL', MBSE-FIDO]
+       MSGID: ['18386.agn_l46@46:1/100 1955835b']
+       REPLY: ['46:1/145 4659a1ce']
+       TZUTC: ['-0600']
+       PATH: ['1/100']
+       CHRS: ['CP437 2']
+    '''
 
 
 def process_inbound():
@@ -872,8 +879,8 @@ def process_inbound():
 
             # Clear out any packets before running next bundle
             clear_files = glob.glob(os.path.join(cfg.unpack_folder, u'*.*'))
-            for f in clear_files:
-                os.remove(f)
+            for file in clear_files:
+                os.remove(file)
 
 
 class TossMessages(ParsePackets):
@@ -886,7 +893,7 @@ class TossMessages(ParsePackets):
         _packet_processing = 'read'
         super(TossMessages, self).__init__(_packet_processing)
 
-
+        
 class ScanMessages(ParsePackets):
     # handle outgoing messages
     def __init__(self):
@@ -896,7 +903,7 @@ class ScanMessages(ParsePackets):
         """
         _packet_processing = 'write'
         super(ScanMessages, self).__init__(_packet_processing)
-
+        
 
 def main(background_daemon=False):
     # Scan for Incoming Message and Import them
